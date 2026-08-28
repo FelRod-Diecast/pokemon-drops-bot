@@ -1,11 +1,14 @@
 {
   "name": "pokemon-drops-bot",
   "version": "1.0.0",
+  "description": "A Discord bot that scans Sam's Club, Costco, and Target for Pokémon card drops every 4 hours.",
   "main": "index.js",
+  "type": "commonjs",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "discord.js": "^14.0.0"
+    "discord.js": "^14.14.1",
+    "node-fetch": "^3.3.2"
   }
 }
