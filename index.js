@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits } = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 const fetch = require('node-fetch');
 
 const client = new Client({
@@ -11,16 +11,22 @@ const CHANNEL_ID = process.env.DROPS_CHANNEL_ID;
 const SOURCES = [
   {
     name: "Sam's Club (Online)",
-    url: "https://www.samsclub.com/s/pokemon"
+    url: "https://www.samsclub.com/s/pokemon",
+    thumbnail: "https://upload.wikimedia.org/wikipedia/commons/5/5f/Sams_Club_logo.svg"
   },
   {
     name: "Costco (Online)",
-    url: "https://www.costco.com/CatalogSearch?dept=All&keyword=pokemon"
+    url: "https://www.costco.com/CatalogSearch?dept=All&keyword=pokemon",
+    thumbnail: "https://upload.wikimedia.org/wikipedia/commons/3/3f/Costco_Wholesale_logo.svg"
   }
 ];
 
-// Prevent duplicate alerts
-let seenItems = new Set();
+// Track per-store state for restock detection
+// storeState[store.name] = { hadPokemon: boolean }
+const storeState = {};
+
+// Prevent duplicate alerts in a short window
+let seenAlerts = new Set();
 
 // Usage stats
 let usageStats = {
@@ -40,21 +46,43 @@ async function scanStore(store) {
     const res = await trackedFetch(store.url);
     const html = await res.text();
 
-    // Look for any "pokemon" mention – all Pokémon cards/products
-    const matches = html.match(/pokemon/gi);
+    const hasPokemon = !!html.match(/pokemon/gi);
 
-    if (matches && matches.length > 0) {
+    if (!storeState[store.name]) {
+      storeState[store.name] = { hadPokemon: false };
+    }
+
+    const previouslyHadPokemon = storeState[store.name].hadPokemon;
+
+    // Restock / new drop detection:
+    // - previouslyHadPokemon === false
+    // - hasPokemon === true
+    if (!previouslyHadPokemon && hasPokemon) {
       const alertKey = `${store.name}-${Date.now()}`;
 
-      if (!seenItems.has(alertKey)) {
-        seenItems.add(alertKey);
+      if (!seenAlerts.has(alertKey)) {
+        seenAlerts.add(alertKey);
 
         const channel = await client.channels.fetch(CHANNEL_ID);
-        await channel.send(
-          `🔥 **POKÉMON DROP DETECTED!**\nStore: **${store.name}**\nLink: ${store.url}`
-        );
+
+        const embed = new EmbedBuilder()
+          .setTitle("🔥 Pokémon Restock / New Drop Detected!")
+          .setDescription(
+            `Store: **${store.name}**\n` +
+            `Status: **RESTOCK / NEW DROP**\n` +
+            `Link: ${store.url}`
+          )
+          .setColor(0xFEE75C) // yellow-ish
+          .setThumbnail(store.thumbnail)
+          .setFooter({ text: "All Pokémon products (keyword: pokemon)" })
+          .setTimestamp();
+
+        await channel.send({ embeds: [embed] });
       }
     }
+
+    // Update state
+    storeState[store.name].hadPokemon = hasPokemon;
   } catch (err) {
     console.error(`Error scanning ${store.name}:`, err);
   }
@@ -67,6 +95,11 @@ async function runScan() {
   for (const store of SOURCES) {
     await scanStore(store);
   }
+
+  // Clean up old alert keys occasionally
+  if (seenAlerts.size > 1000) {
+    seenAlerts.clear();
+  }
 }
 
 // Daily usage report
@@ -78,14 +111,19 @@ async function sendDailyUsageReport() {
     const estimatedCost = (usageStats.fetchCalls * 0.00002).toFixed(4);
     const remainingCredit = (5 - estimatedCost).toFixed(2);
 
-    await channel.send(
-      `📊 **Daily Usage Report**\n` +
-      `• Runtime: **${hoursRunning} hours**\n` +
-      `• Scans run: **${usageStats.scansRun}**\n` +
-      `• Fetch calls: **${usageStats.fetchCalls}**\n` +
-      `• Estimated cost today: **$${estimatedCost}**\n` +
-      `• Free credit remaining (approx): **$${remainingCredit}**`
-    );
+    const embed = new EmbedBuilder()
+      .setTitle("📊 Daily Usage Report")
+      .setColor(0x5865F2)
+      .setDescription(
+        `• Runtime: **${hoursRunning} hours**\n` +
+        `• Scans run: **${usageStats.scansRun}**\n` +
+        `• Fetch calls: **${usageStats.fetchCalls}**\n` +
+        `• Estimated cost today: **$${estimatedCost}**\n` +
+        `• Free credit remaining (approx): **$${remainingCredit}**`
+      )
+      .setTimestamp();
+
+    await channel.send({ embeds: [embed] });
 
     // Reset daily stats
     usageStats.fetchCalls = 0;
@@ -118,9 +156,8 @@ function scheduleDailyReport() {
 client.once('ready', async () => {
   console.log(`Bot is online as ${client.user.tag}`);
 
-  // Test message on startup
   const channel = await client.channels.fetch(CHANNEL_ID);
-  await channel.send("✅ Bot is online and scanner is active (Sam's + Costco online)!");
+  await channel.send("✅ Bot is online — restock detection + thumbnails enabled for Sam's & Costco!");
 
   // Run initial scan
   runScan();
