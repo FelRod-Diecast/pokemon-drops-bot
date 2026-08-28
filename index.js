@@ -7,19 +7,15 @@ const client = new Client({
 
 const CHANNEL_ID = process.env.DROPS_CHANNEL_ID;
 
-// Stores to scan
+// Online sources to scan
 const SOURCES = [
   {
-    name: "Sam's Club",
+    name: "Sam's Club (Online)",
     url: "https://www.samsclub.com/s/pokemon"
   },
   {
-    name: "Costco",
+    name: "Costco (Online)",
     url: "https://www.costco.com/CatalogSearch?dept=All&keyword=pokemon"
-  },
-  {
-    name: "Target",
-    url: "https://www.target.com/s?searchTerm=pokemon+cards"
   }
 ];
 
@@ -44,7 +40,7 @@ async function scanStore(store) {
     const res = await trackedFetch(store.url);
     const html = await res.text();
 
-    // Simple keyword detection
+    // Look for any "pokemon" mention – all Pokémon cards/products
     const matches = html.match(/pokemon/gi);
 
     if (matches && matches.length > 0) {
@@ -124,7 +120,7 @@ client.once('ready', async () => {
 
   // Test message on startup
   const channel = await client.channels.fetch(CHANNEL_ID);
-  await channel.send("✅ Bot is online and scanner is active!");
+  await channel.send("✅ Bot is online and scanner is active (Sam's + Costco online)!");
 
   // Run initial scan
   runScan();
