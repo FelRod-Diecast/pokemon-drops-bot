@@ -119,8 +119,12 @@ function scheduleDailyReport() {
   }, msUntilNoon);
 }
 
-client.once('ready', () => {
+client.once('ready', async () => {
   console.log(`Bot is online as ${client.user.tag}`);
+
+  // Test message on startup
+  const channel = await client.channels.fetch(CHANNEL_ID);
+  await channel.send("✅ Bot is online and scanner is active!");
 
   // Run initial scan
   runScan();
