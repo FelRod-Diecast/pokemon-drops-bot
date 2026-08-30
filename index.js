@@ -47,13 +47,52 @@ throw err;
 async function scanStore(store) {
   try {
     const res = await trackedFetch(store.url);
+
     const html = await res.text();
 
+    console.log(`Downloaded ${html.length} characters from ${store.name}`);
+
     const hasPokemon = !!html.match(/pokemon/gi);
+
+    console.log(`${store.name}: hasPokemon=${hasPokemon}`);
 
     if (!storeState[store.name]) {
       storeState[store.name] = { hadPokemon: false };
     }
+
+    const previouslyHadPokemon = storeState[store.name].hadPokemon;
+
+    if (!previouslyHadPokemon && hasPokemon) {
+      const alertKey = `${store.name}-${Date.now()}`;
+
+      if (!seenAlerts.has(alertKey)) {
+        seenAlerts.add(alertKey);
+
+        const channel = await client.channels.fetch(CHANNEL_ID);
+
+        const embed = new EmbedBuilder()
+          .setTitle("🔥 Pokémon Restock / New Drop Detected!")
+          .setDescription(
+            `Store: **${store.name}**\n` +
+            `Status: **RESTOCK / NEW DROP**\n` +
+            `Link: ${store.url}`
+          )
+          .setColor(0xFEE75C)
+          .setThumbnail(store.thumbnail)
+          .setFooter({
+            text: "All Pokémon products (keyword: pokemon)"
+          })
+          .setTimestamp();
+
+        await channel.send({ embeds: [embed] });
+      }
+    }
+
+    storeState[store.name].hadPokemon = hasPokemon;
+  } catch (err) {
+    console.error(`Error scanning ${store.name}:`, err);
+  }
+}
 
     const previouslyHadPokemon = storeState[store.name].hadPokemon;
 
@@ -156,7 +195,7 @@ function scheduleDailyReport() {
   }, msUntilNoon);
 }
 
-client.once('ready', async () => {
+client.on('clientReady', () => {
   console.log(`Bot is online as ${client.user.tag}`);
 
   const channel = await client.channels.fetch(CHANNEL_ID);
