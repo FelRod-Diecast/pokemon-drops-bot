@@ -1,7 +1,7 @@
-const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder } = require("discord.js");
 
 const fetch = (...args) =>
-  import('node-fetch').then(({ default: fetch }) => fetch(...args));
+  import("node-fetch").then(({ default: fetch }) => fetch(...args));
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds]
@@ -13,7 +13,8 @@ const SOURCES = [
   {
     name: "Sam's Club (Online)",
     url: "https://www.samsclub.com/s/pokemon",
-    thumbnail: "https://upload.wikimedia.org/wikipedia/commons/5/5f/Sams_Club_logo.svg"
+    thumbnail:
+      "https://upload.wikimedia.org/wikipedia/commons/5/5f/Sams_Club_logo.svg"
   }
 ];
 
@@ -36,53 +37,39 @@ async function scanStore(store) {
 
     console.log(`Downloaded ${html.length} characters`);
 
-   const cardKeywords = [
-  "pokemon cards",
-  "pokemon trading card game",
-  "pokemon tcg",
-  "booster pack",
-  "booster bundle",
-  "bundle",
-  "elite trainer box",
-  "etb",
-  "collection box",
-  "premium collection",
-  "trainer box",
-  "battle deck",
-  "tin",
-  "3 pack blister",
-  "6 pack booster",
-  "pokemon bundle"
-];
+    const productMatches =
+      html.match(
+        /pokemon.{0,100}(booster|bundle|elite trainer box|etb|tin|collection|battle deck)/gi
+      ) || [];
 
-    const matches = [];
+    const uniqueMatches = [...new Set(productMatches)];
 
-    cardKeywords.forEach(keyword => {
-      if (html.toLowerCase().includes(keyword)) {
-        matches.push(keyword);
-      }
-    });
+    console.log("Products Found:", uniqueMatches);
 
-    console.log("Matches:", matches);
-
-    if (matches.length === 0) {
+    if (uniqueMatches.length === 0) {
       return;
     }
 
-    for (const match of matches) {
-      if (knownProducts.has(match)) continue;
+    const channel = await client.channels.fetch(CHANNEL_ID);
 
-      knownProducts.add(match);
+    for (const product of uniqueMatches) {
+      if (knownProducts.has(product)) continue;
 
-      const channel = await client.channels.fetch(CHANNEL_ID);
+      knownProducts.add(product);
 
       const embed = new EmbedBuilder()
-        .setTitle("🔥 Pokémon TCG Product Detected")
+        .setTitle("🔥 New Pokémon TCG Product Detected")
         .setColor(0xFEE75C)
         .setThumbnail(store.thumbnail)
         .addFields(
-          { name: "Store", value: store.name },
-          { name: "Keyword Found", value: match }
+          {
+            name: "Store",
+            value: store.name
+          },
+          {
+            name: "Product",
+            value: product.substring(0, 1024)
+          }
         )
         .setURL(store.url)
         .setTimestamp();
@@ -90,6 +77,8 @@ async function scanStore(store) {
       await channel.send({
         embeds: [embed]
       });
+
+      console.log(`Alert sent for: ${product}`);
     }
   } catch (err) {
     console.error(`Error scanning ${store.name}:`, err);
@@ -111,10 +100,10 @@ client.once("clientReady", async () => {
     const channel = await client.channels.fetch(CHANNEL_ID);
 
     await channel.send(
-      "✅ Pokémon Tracker Online - Monitoring Sam's Club for Pokémon TCG products."
+      "✅ Pokémon Tracker Online - Monitoring Sam's Club for Pokémon cards, packs, ETBs, tins, and bundles."
     );
   } catch (err) {
-    console.error(err);
+    console.error("Startup message error:", err);
   }
 
   await runScan();
