@@ -130,7 +130,8 @@ client.once("clientReady", async () => {
 
   await runScan();
 
-  setInterval(runScan, 30 * 60 * 1000);
+  // Every minute for testing
+  setInterval(runScan, 60 * 1000);
 });
 
 // =========================
