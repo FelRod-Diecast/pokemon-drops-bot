@@ -1,5 +1,6 @@
 const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
-const fetch = require('node-fetch');
+const fetch = (...args) =>
+import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds]
