@@ -5,10 +5,18 @@ const path = require("path");
 const fetch = (...args) =>
   import("node-fetch").then(({ default: fetch }) => fetch(...args));
 
+// =====================================
+// CONFIG
+// =====================================
+
 const CHANNEL_ID = process.env.DROPS_CHANNEL_ID;
 
 const ZIP_CODE = "76040";
 const SEARCH_RADIUS = 50;
+
+// =====================================
+// PRODUCT DATABASE
+// =====================================
 
 const PRODUCTS_FILE = path.join(__dirname, "products.json");
 
@@ -29,19 +37,52 @@ function saveProducts(products) {
 
 const products = loadProducts();
 
+// =====================================
+// DISCORD CLIENT
+// =====================================
+
 const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
 
-async function sendProductAlert(product) {
-  const channel = await client.channels.fetch(CHANNEL_ID);
+// =====================================
+// ALERT SYSTEM
+// =====================================
 
-  await channel.send(
-    `🔥 NEW PRODUCT\n\n` +
-    `Store: ${product.store}\n` +
-    `Product: ${product.name}`
-  );
+async function sendProductAlert(product) {
+  try {
+    const channel = await client.channels.fetch(CHANNEL_ID);
+
+    await channel.send(
+      `🔥 NEW POKÉMON PRODUCT\n\n` +
+      `Store: ${product.store}\n` +
+      `Product: ${product.name}`
+    );
+  } catch (err) {
+    console.error("Alert Error:", err);
+  }
 }
+
+// =====================================
+// PRODUCT MEMORY
+// =====================================
+
+function rememberProduct(productName) {
+  if (products[productName]) {
+    return false;
+  }
+
+  products[productName] = {
+    firstSeen: new Date().toISOString()
+  };
+
+  saveProducts(products);
+  return true;
+}
+
+// =====================================
+// SAM'S CLUB SCANNER
+// =====================================
 
 async function scanSamsClub() {
   try {
@@ -58,48 +99,51 @@ async function scanSamsClub() {
       `Downloaded ${html.length} characters`
     );
 
-    const pokemonMatches =
-      html.match(/pokemon.{0,80}/gi) || [];
+    const productNames = [];
 
-    const uniqueMatches = [
-      ...new Set(pokemonMatches)
+    const nameMatches =
+      html.match(/"name":"[^"]+"/gi) || [];
+
+    for (const match of nameMatches) {
+      const productName = match
+        .replace('"name":"', "")
+        .replace('"', "")
+        .trim();
+
+      if (
+        productName.toLowerCase().includes("pokemon")
+      ) {
+        productNames.push(productName);
+      }
+    }
+
+    const uniqueProducts = [
+      ...new Set(productNames)
     ];
 
     console.log(
-      "Pokemon Matches Found:",
-      uniqueMatches.length
+      `Pokemon Products Found: ${uniqueProducts.length}`
     );
 
     console.log(
-      uniqueMatches.slice(0, 10)
+      uniqueProducts.slice(0, 25)
     );
 
+    for (const product of uniqueProducts) {
+      const isNewProduct =
+        rememberProduct(product);
+
+      if (!isNewProduct) continue;
+
+      console.log(
+        `New Product Detected: ${product}`
+      );
+
+      await sendProductAlert({
+        store: "Sam's Club",
+        name: product
+      });
+    }
   } catch (err) {
     console.error(
-      "Sam's Club Scan Error:",
-      err
-    );
-  }
-}
-
-async function runScan() {
-  console.log("================================");
-  console.log("Starting Pokemon Scan");
-  console.log("================================");
-
-  await scanSamsClub();
-
-  console.log("Scan Complete");
-}
-
-client.once("clientReady", async () => {
-  console.log("PokemonTrackerV2 Online");
-  console.log(`ZIP: ${ZIP_CODE}`);
-  console.log(`Radius: ${SEARCH_RADIUS} miles`);
-
-  await runScan();
-
-  setInterval(runScan, 30 * 60 * 1000);
-});
-
-client.login(process.env.DISCORD_TOKEN);
+      "
