@@ -15,11 +15,11 @@ const SOURCES = [
     url: "https://www.samsclub.com/s/pokemon",
     thumbnail: "https://upload.wikimedia.org/wikipedia/commons/5/5f/Sams_Club_logo.svg"
   },
-  {
-    name: "Costco (Online)",
-    url: "https://www.costco.com/CatalogSearch?dept=All&keyword=pokemon",
-    thumbnail: "https://upload.wikimedia.org/wikipedia/commons/3/3f/Costco_Wholesale_logo.svg"
-  }
+ {
+name: "Costco (Online)",
+url: "<a href="https://www.costco.com/CatalogSearch?dept=All&keyword=pokemon&quot;,...",
+thumbnail: "<a href="https://upload.wikimedia.org/wikipedia/commons/3/3f/Costco_Wholesale_logo.svg&quot;..."
+}
 ];
 
 // Track per-store state for restock detection
