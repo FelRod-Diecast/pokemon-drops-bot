@@ -10,16 +10,14 @@ const CHANNEL_ID = process.env.DROPS_CHANNEL_ID;
 
 // Online sources to scan
 const SOURCES = [
-{
-name: "Sam's Club (Online)",
-url: "https://www.samsclub.com/s/pokemon",
-thumbnail: "https://upload.wikimedia.org/wikipedia/commons/5/5f/Sams_Club_logo.svg"
-},
-
+  {
+    name: "Sam's Club (Online)",
+    url: "https://www.samsclub.com/s/pokemon",
+    thumbnail: "https://upload.wikimedia.org/wikipedia/commons/5/5f/Sams_Club_logo.svg"
+  }
 ];
 
 // Track per-store state for restock detection
-// storeState[store.name] = { hadPokemon: boolean }
 const storeState = {};
 
 // Prevent duplicate alerts in a short window
