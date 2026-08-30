@@ -11,8 +11,8 @@ const CHANNEL_ID = process.env.DROPS_CHANNEL_ID;
 
 const SOURCES = [
   {
-    name: "Sam's Club (Online)",
-    url: "https://www.samsclub.com/s/pokemon",
+    name: "Sam's Club Pokemon Cards",
+    url: "https://www.samsclub.com/s/pokemon%20cards",
     thumbnail:
       "https://upload.wikimedia.org/wikipedia/commons/5/5f/Sams_Club_logo.svg"
   }
@@ -23,7 +23,12 @@ const knownProducts = new Set();
 async function trackedFetch(url) {
   console.log(`Fetching: ${url}`);
 
-  const response = await fetch(url);
+  const response = await fetch(url, {
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    }
+  });
 
   console.log(`Success: ${url}`);
 
@@ -37,28 +42,42 @@ async function scanStore(store) {
 
     console.log(`Downloaded ${html.length} characters`);
 
-    const productMatches =
+    const rawMatches =
       html.match(
-        /pokemon.{0,100}(booster|bundle|elite trainer box|etb|tin|collection|battle deck)/gi
+        /pokemon.{0,100}(card|tcg|booster|bundle|elite trainer|etb|collection|battle deck|tin)/gi
       ) || [];
 
-    const uniqueMatches = [...new Set(productMatches)];
+    const products = [...new Set(rawMatches)].filter((product) => {
+      const p = product.toLowerCase();
 
-    console.log("Products Found:", uniqueMatches);
+      return (
+        p.includes("card") ||
+        p.includes("tcg") ||
+        p.includes("booster") ||
+        p.includes("bundle") ||
+        p.includes("elite trainer") ||
+        p.includes("etb") ||
+        p.includes("collection") ||
+        p.includes("battle deck") ||
+        p.includes("tin")
+      );
+    });
 
-    if (uniqueMatches.length === 0) {
+    console.log("Products Found:", products);
+
+    if (products.length === 0) {
       return;
     }
 
     const channel = await client.channels.fetch(CHANNEL_ID);
 
-    for (const product of uniqueMatches) {
+    for (const product of products) {
       if (knownProducts.has(product)) continue;
 
       knownProducts.add(product);
 
       const embed = new EmbedBuilder()
-        .setTitle("🔥 New Pokémon TCG Product Detected")
+        .setTitle("🔥 Pokémon TCG Product Detected")
         .setColor(0xFEE75C)
         .setThumbnail(store.thumbnail)
         .addFields(
@@ -67,7 +86,7 @@ async function scanStore(store) {
             value: store.name
           },
           {
-            name: "Product",
+            name: "Product Found",
             value: product.substring(0, 1024)
           }
         )
@@ -78,7 +97,7 @@ async function scanStore(store) {
         embeds: [embed]
       });
 
-      console.log(`Alert sent for: ${product}`);
+      console.log(`Alert sent: ${product}`);
     }
   } catch (err) {
     console.error(`Error scanning ${store.name}:`, err);
@@ -100,7 +119,7 @@ client.once("clientReady", async () => {
     const channel = await client.channels.fetch(CHANNEL_ID);
 
     await channel.send(
-      "✅ Pokémon Tracker Online - Monitoring Sam's Club for Pokémon cards, packs, ETBs, tins, and bundles."
+      "✅ Pokémon Tracker Online - Monitoring Pokémon cards, bundles, ETBs, booster packs, tins, and collections."
     );
   } catch (err) {
     console.error("Startup message error:", err);
