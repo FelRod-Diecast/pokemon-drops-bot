@@ -64,6 +64,22 @@ async function scanStore(store) {
   "tin"
 ];
 
+const cardKeywords = [
+  "pokemon cards",
+  "pokemon tcg",
+  "trading card game",
+  "booster pack",
+  "booster bundle",
+  "elite trainer box",
+  "etb",
+  "collection box",
+  "premium collection",
+  "battle deck",
+  "trainer box",
+  "tin",
+  "blister pack"
+];
+
 const hasPokemon = cardKeywords.some(keyword =>
   html.toLowerCase().includes(keyword)
 );
