@@ -146,4 +146,42 @@ async function scanSamsClub() {
     }
   } catch (err) {
     console.error(
-      "
+      "Sam's Club Scan Error:",
+      err
+    );
+  }
+}
+
+// =====================================
+// MASTER SCAN
+// =====================================
+
+async function runScan() {
+  console.log("================================");
+  console.log("Starting Pokemon Scan");
+  console.log("================================");
+
+  await scanSamsClub();
+
+  console.log("Scan Complete");
+}
+
+// =====================================
+// READY EVENT
+// =====================================
+
+client.once("clientReady", async () => {
+  console.log("PokemonTrackerV2 Online");
+  console.log(`ZIP: ${ZIP_CODE}`);
+  console.log(`Radius: ${SEARCH_RADIUS} miles`);
+
+  await runScan();
+
+  setInterval(runScan, 30 * 60 * 1000);
+});
+
+// =====================================
+// LOGIN
+// =====================================
+
+client.login(process.env.DISCORD_TOKEN);
