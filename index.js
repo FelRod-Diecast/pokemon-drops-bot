@@ -17,109 +17,75 @@ const SOURCES = [
   }
 ];
 
-const storeState = {};
-const seenAlerts = new Set();
-
-let usageStats = {
-  fetchCalls: 0,
-  scansRun: 0,
-  startTime: Date.now()
-};
+const knownProducts = new Set();
 
 async function trackedFetch(url) {
   console.log(`Fetching: ${url}`);
 
-  usageStats.fetchCalls++;
+  const response = await fetch(url);
 
-  try {
-    const response = await fetch(url);
+  console.log(`Success: ${url}`);
 
-    console.log(`Success: ${url}`);
-
-    return response;
-  } catch (err) {
-    console.error(`Failed: ${url}`, err);
-    throw err;
-  }
+  return response;
 }
 
 async function scanStore(store) {
   try {
     const res = await trackedFetch(store.url);
-
     const html = await res.text();
 
-    console.log(`Downloaded ${html.length} characters from ${store.name}`);
+    console.log(`Downloaded ${html.length} characters`);
 
-   const cardKeywords = [
-  "booster pack",
-  "booster bundle",
-  "elite trainer box",
-  "etb",
-  "pokemon tcg",
-  "trading card game",
-  "collection box",
-  "premium collection",
-  "pokemon cards",
-  "tin"
-];
+    const cardKeywords = [
+      "pokemon tcg",
+      "pokemon cards",
+      "booster pack",
+      "booster bundle",
+      "elite trainer box",
+      "etb",
+      "collection box",
+      "premium collection",
+      "battle deck",
+      "tin",
+      "blister"
+    ];
 
-const cardKeywords = [
-  "pokemon cards",
-  "pokemon tcg",
-  "trading card game",
-  "booster pack",
-  "booster bundle",
-  "elite trainer box",
-  "etb",
-  "collection box",
-  "premium collection",
-  "battle deck",
-  "trainer box",
-  "tin",
-  "blister pack"
-];
+    const matches = [];
 
-const hasPokemon = cardKeywords.some(keyword =>
-  html.toLowerCase().includes(keyword)
-);
-
-    console.log(`${store.name}: hasPokemon=${hasPokemon}`);
-
-    if (!storeState[store.name]) {
-      storeState[store.name] = {
-        hadPokemon: false
-      };
-    }
-
-    const previouslyHadPokemon = storeState[store.name].hadPokemon;
-
-    if (!previouslyHadPokemon && hasPokemon) {
-      const alertKey = `${store.name}-${Date.now()}`;
-
-      if (!seenAlerts.has(alertKey)) {
-        seenAlerts.add(alertKey);
-
-        const channel = await client.channels.fetch(CHANNEL_ID);
-
-        const embed = new EmbedBuilder()
-          .setTitle("🔥 Pokémon Restock / New Drop Detected!")
-          .setDescription(
-            `Store: **${store.name}**\n` +
-            `Status: **RESTOCK / NEW DROP**\n` +
-            `Link: ${store.url}`
-          )
-          .setColor(0xFEE75C)
-          .setThumbnail(store.thumbnail)
-          .setTimestamp();
-
-        await channel.send({
-          embeds: [embed]
-        });
+    cardKeywords.forEach(keyword => {
+      if (html.toLowerCase().includes(keyword)) {
+        matches.push(keyword);
       }
+    });
+
+    console.log("Matches:", matches);
+
+    if (matches.length === 0) {
+      return;
     }
 
-    storeState[store.name].hadPokemon = hasPokemon;
+    for (const match of matches) {
+      if (knownProducts.has(match)) continue;
+
+      knownProducts.add(match);
+
+      const channel = await client.channels.fetch(CHANNEL_ID);
+
+      const embed = new EmbedBuilder()
+        .setTitle("🔥 Pokémon TCG Product Detected")
+        .setColor(0xFEE75C)
+        .setThumbnail(store.thumbnail)
+        .addFields(
+          { name: "Store", value: store.name },
+          { name: "Keyword Found", value: match }
+        )
+        .setURL(store.url)
+        .setTimestamp();
+
+      await channel.send({
+        embeds: [embed]
+      });
+    }
   } catch (err) {
     console.error(`Error scanning ${store.name}:`, err);
   }
@@ -128,37 +94,8 @@ const hasPokemon = cardKeywords.some(keyword =>
 async function runScan() {
   console.log("Running Pokémon scan...");
 
-  usageStats.scansRun++;
-
   for (const store of SOURCES) {
     await scanStore(store);
-  }
-}
-
-async function sendDailyUsageReport() {
-  try {
-    const channel = await client.channels.fetch(CHANNEL_ID);
-
-    const hoursRunning = (
-      (Date.now() - usageStats.startTime) /
-      3600000
-    ).toFixed(2);
-
-    const embed = new EmbedBuilder()
-      .setTitle("📊 Daily Usage Report")
-      .setColor(0x5865F2)
-      .setDescription(
-        `Runtime: ${hoursRunning} hours\n` +
-        `Scans run: ${usageStats.scansRun}\n` +
-        `Fetch calls: ${usageStats.fetchCalls}`
-      )
-      .setTimestamp();
-
-    await channel.send({
-      embeds: [embed]
-    });
-  } catch (err) {
-    console.error("Daily report error:", err);
   }
 }
 
@@ -169,15 +106,15 @@ client.once("clientReady", async () => {
     const channel = await client.channels.fetch(CHANNEL_ID);
 
     await channel.send(
-      "✅ Pokémon Tracker is online and scanning Sam's Club."
+      "✅ Pokémon Tracker Online - Monitoring Sam's Club for Pokémon TCG products."
     );
   } catch (err) {
-    console.error("Startup message error:", err);
+    console.error(err);
   }
 
   await runScan();
 
-  setInterval(runScan, 4 * 60 * 60 * 1000);
+  setInterval(runScan, 60 * 60 * 1000);
 });
 
 client.login(process.env.DISCORD_TOKEN);
