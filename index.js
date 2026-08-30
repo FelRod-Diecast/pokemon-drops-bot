@@ -51,7 +51,22 @@ async function scanStore(store) {
 
     console.log(`Downloaded ${html.length} characters from ${store.name}`);
 
-    const hasPokemon = /pokemon/i.test(html);
+   const cardKeywords = [
+  "booster pack",
+  "booster bundle",
+  "elite trainer box",
+  "etb",
+  "pokemon tcg",
+  "trading card game",
+  "collection box",
+  "premium collection",
+  "pokemon cards",
+  "tin"
+];
+
+const hasPokemon = cardKeywords.some(keyword =>
+  html.toLowerCase().includes(keyword)
+);
 
     console.log(`${store.name}: hasPokemon=${hasPokemon}`);
 
