@@ -15,11 +15,7 @@ name: "Sam's Club (Online)",
 url: "https://www.samsclub.com/s/pokemon",
 thumbnail: "https://upload.wikimedia.org/wikipedia/commons/5/5f/Sams_Club_logo.svg"
 },
-{
-name: "Costco (Online)",
-url: "https://www.costco.com/CatalogSearch?dept=All&keyword=pokemon",
-thumbnail: "https://upload.wikimedia.org/wikipedia/commons/3/3f/Costco_Wholesale_logo.svg"
-}
+
 ];
 
 // Track per-store state for restock detection
