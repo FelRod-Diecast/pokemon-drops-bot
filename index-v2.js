@@ -120,17 +120,21 @@ async function runScan() {
 }
 
 // =========================
-// BOT READY
+// READY EVENT
 // =========================
 
 client.once("clientReady", async () => {
   console.log("PokemonTrackerV2 Online");
-
   console.log(`ZIP: ${ZIP_CODE}`);
   console.log(`Radius: ${SEARCH_RADIUS} miles`);
 
-  console.log("Enabled Stores:");
+  await runScan();
 
-  for (const store of STORES) {
-    if (store.enabled) {
-      
+  setInterval(runScan, 30 * 60 * 1000);
+});
+
+// =========================
+// LOGIN
+// =========================
+
+client.login(process.env.DISCORD_TOKEN);
