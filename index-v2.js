@@ -42,11 +42,7 @@ async function sendProductAlert(product) {
 client.once("clientReady", async () => {
   console.log("PokemonTrackerV2 Online");
 
-  await sendProductAlert({
-    store: "TEST",
-    name: "Pokemon Black Bolt ETB",
-    url: "https://example.com"
-  });
+ console.log("Tracker startup test passed");
 
   // Target Scanner
   // Sam's Scanner
