@@ -1,4 +1,10 @@
 {
+  "name": "pokemon-drops-bot",
+  "version": "2.0.0",
+  "main": "index-v2.js",
+  "scripts": {
+    "start": "node index-v2.js"
+  },
   "dependencies": {
     "discord.js": "^14",
     "node-fetch": "^3"
