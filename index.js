@@ -36,19 +36,24 @@ async function scanStore(store) {
 
     console.log(`Downloaded ${html.length} characters`);
 
-    const cardKeywords = [
-      "pokemon tcg",
-      "pokemon cards",
-      "booster pack",
-      "booster bundle",
-      "elite trainer box",
-      "etb",
-      "collection box",
-      "premium collection",
-      "battle deck",
-      "tin",
-      "blister"
-    ];
+   const cardKeywords = [
+  "pokemon cards",
+  "pokemon trading card game",
+  "pokemon tcg",
+  "booster pack",
+  "booster bundle",
+  "bundle",
+  "elite trainer box",
+  "etb",
+  "collection box",
+  "premium collection",
+  "trainer box",
+  "battle deck",
+  "tin",
+  "3 pack blister",
+  "6 pack booster",
+  "pokemon bundle"
+];
 
     const matches = [];
 
