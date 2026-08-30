@@ -38,8 +38,16 @@ let usageStats = {
 
 // Tracked fetch for usage monitoring
 async function trackedFetch(url) {
-  usageStats.fetchCalls++;
-  return fetch(url);
+console.log(`Fetching: ${url}`);
+ 
+try {
+const response = await fetch(url);
+console.log(`Success: ${url}`);
+return response;
+} catch (err) {
+console.error(`Failed: ${url}`, err);
+throw err;
+}
 }
 
 async function scanStore(store) {
