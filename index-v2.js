@@ -347,7 +347,127 @@ async function scanSamsClub() {
 // =====================================
 
 async function scanCostco() {
-  console.log("Costco scanner: coming next.");
+  try {
+    console.log("Scanning Costco...");
+
+    const searchUrls = [
+      "https://www.costco.com/CatalogSearch?keyword=pokemon%20trading%20cards",
+      "https://www.costco.com/CatalogSearch?keyword=pokemon%20tcg"
+    ];
+
+    const foundProducts = new Map();
+
+    for (const url of searchUrls) {
+      console.log(`Costco request: ${url}`);
+
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/154 Safari/537.36",
+          "Accept":
+            "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+          "Accept-Language":
+            "en-US,en;q=0.9"
+        }
+      });
+
+      if (!response.ok) {
+        console.error(
+          `Costco HTTP ${response.status} for ${url}`
+        );
+        continue;
+      }
+
+      const html = await response.text();
+
+      console.log(
+        `Costco downloaded ${html.length} characters`
+      );
+
+      /*
+       * Costco product pages currently expose product URLs
+       * containing /p/ and product titles in the returned page.
+       *
+       * We collect links first, then use the surrounding
+       * text/title information for the TCG filter.
+       */
+
+      const linkRegex =
+        /href=["']([^"']*\/p\/[^"']+)["'][^>]*>([\s\S]{0,500}?)<\/a>/gi;
+
+      let match;
+
+      while ((match = linkRegex.exec(html)) !== null) {
+        const productUrl = match[1]
+          .replace(/&amp;/g, "&")
+          .trim();
+
+        const rawText = match[2]
+          .replace(/<[^>]+>/g, " ")
+          .replace(/&amp;/g, "&")
+          .replace(/&#39;/g, "'")
+          .replace(/&quot;/g, '"')
+          .replace(/\s+/g, " ")
+          .trim();
+
+        if (!rawText) {
+          continue;
+        }
+
+        if (!isPokemonTCGProduct(rawText)) {
+          continue;
+        }
+
+        const absoluteUrl =
+          productUrl.startsWith("http")
+            ? productUrl
+            : `https://www.costco.com${productUrl}`;
+
+        const key = absoluteUrl;
+
+        if (!foundProducts.has(key)) {
+          foundProducts.set(key, {
+            name: rawText,
+            url: absoluteUrl
+          });
+        }
+      }
+    }
+
+    console.log(
+      `Costco Pokémon TCG candidates found: ${foundProducts.size}`
+    );
+
+    for (const product of foundProducts.values()) {
+      console.log(
+        `Costco candidate: ${product.name}`
+      );
+
+      const isNew = rememberProduct(
+        "Costco",
+        product
+      );
+
+      if (!isNew) {
+        continue;
+      }
+
+      console.log(
+        `NEW Costco Pokémon TCG product: ${product.name}`
+      );
+
+      await sendProductAlert({
+        store: "Costco",
+        name: product.name,
+        url: product.url
+      });
+    }
+  } catch (err) {
+    console.error(
+      "Costco Scan Error:",
+      err
+    );
+  }
 }
 
 // =====================================
