@@ -14,11 +14,11 @@ const CHANNEL_ID = process.env.DROPS_CHANNEL_ID;
 const ZIP_CODE = "76040";
 const SEARCH_RADIUS = 50;
 
+const PRODUCTS_FILE = path.join(__dirname, "products.json");
+
 // =====================================
 // PRODUCT DATABASE
 // =====================================
-
-const PRODUCTS_FILE = path.join(__dirname, "products.json");
 
 function loadProducts() {
   try {
@@ -46,38 +46,213 @@ const client = new Client({
 });
 
 // =====================================
-// ALERT SYSTEM
+// POKÉMON TCG FILTER
 // =====================================
 
-async function sendProductAlert(product) {
-  try {
-    const channel = await client.channels.fetch(CHANNEL_ID);
+// Words that strongly indicate an actual Pokémon TCG product.
+const TCG_INCLUDE_TERMS = [
+  "pokemon tcg",
+  "pokémon tcg",
+  "pokemon trading card",
+  "pokémon trading card",
+  "trading card game",
+  "booster pack",
+  "booster bundle",
+  "booster box",
+  "booster display",
+  "elite trainer box",
+  "trainer box",
+  "collection box",
+  "premium collection",
+  "special collection",
+  "collector chest",
+  "mini tin",
+  "tin",
+  "blister",
+  "3-pack blister",
+  "checklane blister",
+  "pokemon cards",
+  "pokémon cards"
+];
 
-    await channel.send(
-      `🔥 NEW POKÉMON PRODUCT\n\n` +
-      `Store: ${product.store}\n` +
-      `Product: ${product.name}`
-    );
-  } catch (err) {
-    console.error("Alert Error:", err);
+// Words that identify Pokémon merchandise that we DON'T want.
+const TCG_EXCLUDE_TERMS = [
+  "cake",
+  "cookie",
+  "cupcake",
+  "costume",
+  "dress-up",
+  "coloring",
+  "coloring book",
+  "coloring kit",
+  "activity book",
+  "storybook",
+  "book",
+  "manual",
+  "plush",
+  "stuffed animal",
+  "toy",
+  "figure",
+  "figurine",
+  "puzzle",
+  "backpack",
+  "clothing",
+  "shirt",
+  "t-shirt",
+  "hat",
+  "costume",
+  "nintendo switch",
+  "switch game",
+  "video game",
+  "dvd",
+  "movie",
+  "snack",
+  "candy",
+  "cereal",
+  "cup",
+  "plate",
+  "party",
+  "decoration",
+  "bedding",
+  "blanket",
+  "shoe",
+  "sock"
+];
+
+function normalizeText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isPokemonTCGProduct(productName) {
+  const name = normalizeText(productName);
+
+  if (!name) {
+    return false;
   }
+
+  // It must actually mention Pokémon.
+  const mentionsPokemon =
+    name.includes("pokemon");
+
+  if (!mentionsPokemon) {
+    return false;
+  }
+
+  // Immediately reject obvious non-TCG merchandise.
+  for (const term of TCG_EXCLUDE_TERMS) {
+    if (name.includes(term)) {
+      return false;
+    }
+  }
+
+  // Accept if it contains a strong TCG indicator.
+  for (const term of TCG_INCLUDE_TERMS) {
+    if (name.includes(normalizeText(term))) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 // =====================================
 // PRODUCT MEMORY
 // =====================================
 
-function rememberProduct(productName) {
-  if (products[productName]) {
+function getProductKey(store, product) {
+  if (product.id) {
+    return `${store}:${product.id}`;
+  }
+
+  return `${store}:${normalizeText(product.name)}`;
+}
+
+function rememberProduct(store, product) {
+  const key = getProductKey(store, product);
+
+  if (products[key]) {
     return false;
   }
 
-  products[productName] = {
+  products[key] = {
+    store,
+    id: product.id || null,
+    name: product.name,
+    url: product.url || null,
+    price: product.price || null,
     firstSeen: new Date().toISOString()
   };
 
   saveProducts(products);
+
   return true;
+}
+
+// =====================================
+// DISCORD ALERT
+// =====================================
+
+async function sendProductAlert(product) {
+  try {
+    const channel = await client.channels.fetch(CHANNEL_ID);
+
+    let message =
+      `🔥 **NEW POKÉMON TCG PRODUCT**\n\n` +
+      `**Store:** ${product.store}\n` +
+      `**Product:** ${product.name}`;
+
+    if (product.price) {
+      message += `\n**Price:** ${product.price}`;
+    }
+
+    if (product.url) {
+      message += `\n**Link:** ${product.url}`;
+    }
+
+    await channel.send(message);
+  } catch (err) {
+    console.error("Discord Alert Error:", err);
+  }
+}
+
+// =====================================
+// TEST FILTER
+// =====================================
+
+function testFilter() {
+  const testProducts = [
+    "Pokemon Popkopia – Nintendo Switch 2",
+    "Pokemon Half Sheet Cookie Cake",
+    "Pokemon Two-Tier Cake",
+    "Pokemon Cupcakes, 30 ct.",
+    "Pokemon Charizard Children's Deluxe Costume",
+    "Crayola Coloring Kit, Pokemon & Blue",
+    "Pokemon – The Essential Trainer Manual",
+
+    "Pokemon TCG Elite Trainer Box",
+    "Pokemon TCG Booster Bundle",
+    "Pokemon Trading Card Game Collection Box",
+    "Pokemon TCG Booster Pack"
+  ];
+
+  console.log("");
+  console.log("================================");
+  console.log("POKÉMON TCG FILTER TEST");
+  console.log("================================");
+
+  for (const name of testProducts) {
+    console.log(
+      `${isPokemonTCGProduct(name) ? "✅ KEEP" : "❌ IGNORE"} | ${name}`
+    );
+  }
+
+  console.log("================================");
+  console.log("");
 }
 
 // =====================================
@@ -91,12 +266,23 @@ async function scanSamsClub() {
     const url =
       "https://www.samsclub.com/s/pokemon%20cards";
 
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/154 Safari/537.36"
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Sam's Club HTTP ${response.status}`
+      );
+    }
 
     const html = await response.text();
 
     console.log(
-      `Downloaded ${html.length} characters`
+      `Sam's Club downloaded ${html.length} characters`
     );
 
     const productNames = [];
@@ -110,11 +296,11 @@ async function scanSamsClub() {
         .replace('"', "")
         .trim();
 
-      if (
-        productName.toLowerCase().includes("pokemon")
-      ) {
-        productNames.push(productName);
+      if (!isPokemonTCGProduct(productName)) {
+        continue;
       }
+
+      productNames.push(productName);
     }
 
     const uniqueProducts = [
@@ -122,26 +308,30 @@ async function scanSamsClub() {
     ];
 
     console.log(
-      `Pokemon Products Found: ${uniqueProducts.length}`
+      `Sam's Club Pokémon TCG products found: ${uniqueProducts.length}`
     );
 
-    console.log(
-      uniqueProducts.slice(0, 25)
-    );
+    for (const productName of uniqueProducts) {
+      const product = {
+        name: productName
+      };
 
-    for (const product of uniqueProducts) {
-      const isNewProduct =
-        rememberProduct(product);
+      const isNew = rememberProduct(
+        "Sam's Club",
+        product
+      );
 
-      if (!isNewProduct) continue;
+      if (!isNew) {
+        continue;
+      }
 
       console.log(
-        `New Product Detected: ${product}`
+        `NEW Sam's Club Pokémon TCG product: ${productName}`
       );
 
       await sendProductAlert({
         store: "Sam's Club",
-        name: product
+        name: productName
       });
     }
   } catch (err) {
@@ -153,15 +343,273 @@ async function scanSamsClub() {
 }
 
 // =====================================
+// COSTCO SCANNER
+// =====================================
+
+async function scanCostco() {
+  try {
+    console.log("Scanning Costco...");
+
+    const searchUrls = [
+      "https://www.costco.com/CatalogSearch?keyword=pokemon%20trading%20cards",
+      "https://www.costco.com/CatalogSearch?keyword=pokemon%20tcg"
+    ];
+
+    const foundProducts = new Map();
+
+    for (const url of searchUrls) {
+      console.log(`Costco request: ${url}`);
+
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/154 Safari/537.36",
+          "Accept":
+            "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+          "Accept-Language":
+            "en-US,en;q=0.9"
+        }
+      });
+
+      if (!response.ok) {
+        console.error(
+          `Costco HTTP ${response.status} for ${url}`
+        );
+        continue;
+      }
+
+      const html = await response.text();
+
+      console.log(
+        `Costco downloaded ${html.length} characters`
+      );
+
+      /*
+       * Costco product pages currently expose product URLs
+       * containing /p/ and product titles in the returned page.
+       *
+       * We collect links first, then use the surrounding
+       * text/title information for the TCG filter.
+       */
+
+      const linkRegex =
+        /href=["']([^"']*\/p\/[^"']+)["'][^>]*>([\s\S]{0,500}?)<\/a>/gi;
+
+      let match;
+
+      while ((match = linkRegex.exec(html)) !== null) {
+        const productUrl = match[1]
+          .replace(/&amp;/g, "&")
+          .trim();
+
+        const rawText = match[2]
+          .replace(/<[^>]+>/g, " ")
+          .replace(/&amp;/g, "&")
+          .replace(/&#39;/g, "'")
+          .replace(/&quot;/g, '"')
+          .replace(/\s+/g, " ")
+          .trim();
+
+        if (!rawText) {
+          continue;
+        }
+
+        if (!isPokemonTCGProduct(rawText)) {
+          continue;
+        }
+
+        const absoluteUrl =
+          productUrl.startsWith("http")
+            ? productUrl
+            : `https://www.costco.com${productUrl}`;
+
+        const key = absoluteUrl;
+
+        if (!foundProducts.has(key)) {
+          foundProducts.set(key, {
+            name: rawText,
+            url: absoluteUrl
+          });
+        }
+      }
+    }
+
+    console.log(
+      `Costco Pokémon TCG candidates found: ${foundProducts.size}`
+    );
+
+    for (const product of foundProducts.values()) {
+      console.log(
+        `Costco candidate: ${product.name}`
+      );
+
+      const isNew = rememberProduct(
+        "Costco",
+        product
+      );
+
+      if (!isNew) {
+        continue;
+      }
+
+      console.log(
+        `NEW Costco Pokémon TCG product: ${product.name}`
+      );
+
+      await sendProductAlert({
+        store: "Costco",
+        name: product.name,
+        url: product.url
+      });
+    }
+  } catch (err) {
+    console.error(
+      "Costco Scan Error:",
+      err
+    );
+  }
+}
+
+// =====================================
+// TARGET SCANNER
+// =====================================
+
+async function scanTarget() {
+  try {
+    console.log("Scanning Target...");
+
+    const searchUrls = [
+      "https://www.target.com/s/pokemon%20tcg",
+      "https://www.target.com/s/pokemon%20trading%20cards"
+    ];
+
+    const foundProducts = new Map();
+
+    for (const url of searchUrls) {
+      console.log(`Target request: ${url}`);
+
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/154 Safari/537.36",
+          "Accept":
+            "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+          "Accept-Language":
+            "en-US,en;q=0.9"
+        }
+      });
+
+      if (!response.ok) {
+        console.error(
+          `Target HTTP ${response.status} for ${url}`
+        );
+        continue;
+      }
+
+      const html = await response.text();
+
+      console.log(
+        `Target downloaded ${html.length} characters`
+      );
+
+      /*
+       * Target product links generally contain /p/.
+       * We collect the surrounding text and let the
+       * Pokémon TCG filter decide what is a real hit.
+       */
+
+      const linkRegex =
+        /href=["']([^"']*\/p\/[^"']+)["'][^>]*>([\s\S]{0,700}?)<\/a>/gi;
+
+      let match;
+
+      while ((match = linkRegex.exec(html)) !== null) {
+        const productUrl = match[1]
+          .replace(/&amp;/g, "&")
+          .trim();
+
+        const rawText = match[2]
+          .replace(/<[^>]+>/g, " ")
+          .replace(/&amp;/g, "&")
+          .replace(/&#39;/g, "'")
+          .replace(/&quot;/g, '"')
+          .replace(/\s+/g, " ")
+          .trim();
+
+        if (!rawText) {
+          continue;
+        }
+
+        if (!isPokemonTCGProduct(rawText)) {
+          continue;
+        }
+
+        const absoluteUrl =
+          productUrl.startsWith("http")
+            ? productUrl
+            : `https://www.target.com${productUrl}`;
+
+        const key = absoluteUrl;
+
+        if (!foundProducts.has(key)) {
+          foundProducts.set(key, {
+            name: rawText,
+            url: absoluteUrl
+          });
+        }
+      }
+    }
+
+    console.log(
+      `Target Pokémon TCG candidates found: ${foundProducts.size}`
+    );
+
+    for (const product of foundProducts.values()) {
+      console.log(
+        `Target candidate: ${product.name}`
+      );
+
+      const isNew = rememberProduct(
+        "Target",
+        product
+      );
+
+      if (!isNew) {
+        continue;
+      }
+
+      console.log(
+        `NEW Target Pokémon TCG product: ${product.name}`
+      );
+
+      await sendProductAlert({
+        store: "Target",
+        name: product.name,
+        url: product.url
+      });
+    }
+  } catch (err) {
+    console.error(
+      "Target Scan Error:",
+      err
+    );
+  }
+}
+
+// =====================================
 // MASTER SCAN
 // =====================================
 
 async function runScan() {
   console.log("================================");
-  console.log("Starting Pokemon Scan");
+  console.log("Starting Pokémon TCG Scan");
   console.log("================================");
 
+  testFilter();
+
   await scanSamsClub();
+  await scanCostco();
+  await scanTarget();
 
   console.log("Scan Complete");
 }
@@ -171,17 +619,22 @@ async function runScan() {
 // =====================================
 
 client.once("clientReady", async () => {
-  console.log("PokemonTrackerV2 Online");
+  console.log("PokemonTrackerV3 Online");
   console.log(`ZIP: ${ZIP_CODE}`);
   console.log(`Radius: ${SEARCH_RADIUS} miles`);
 
   await runScan();
 
-  setInterval(runScan, 30 * 60 * 1000);
+  setInterval(
+    runScan,
+    30 * 60 * 1000
+  );
 });
 
 // =====================================
 // LOGIN
 // =====================================
 
-client.login(process.env.DISCORD_TOKEN);
+client.login(
+  process.env.DISCORD_TOKEN
+);
