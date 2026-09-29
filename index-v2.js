@@ -475,7 +475,125 @@ async function scanCostco() {
 // =====================================
 
 async function scanTarget() {
-  console.log("Target scanner: coming next.");
+  try {
+    console.log("Scanning Target...");
+
+    const searchUrls = [
+      "https://www.target.com/s/pokemon%20tcg",
+      "https://www.target.com/s/pokemon%20trading%20cards"
+    ];
+
+    const foundProducts = new Map();
+
+    for (const url of searchUrls) {
+      console.log(`Target request: ${url}`);
+
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/154 Safari/537.36",
+          "Accept":
+            "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+          "Accept-Language":
+            "en-US,en;q=0.9"
+        }
+      });
+
+      if (!response.ok) {
+        console.error(
+          `Target HTTP ${response.status} for ${url}`
+        );
+        continue;
+      }
+
+      const html = await response.text();
+
+      console.log(
+        `Target downloaded ${html.length} characters`
+      );
+
+      /*
+       * Target product links generally contain /p/.
+       * We collect the surrounding text and let the
+       * Pokémon TCG filter decide what is a real hit.
+       */
+
+      const linkRegex =
+        /href=["']([^"']*\/p\/[^"']+)["'][^>]*>([\s\S]{0,700}?)<\/a>/gi;
+
+      let match;
+
+      while ((match = linkRegex.exec(html)) !== null) {
+        const productUrl = match[1]
+          .replace(/&amp;/g, "&")
+          .trim();
+
+        const rawText = match[2]
+          .replace(/<[^>]+>/g, " ")
+          .replace(/&amp;/g, "&")
+          .replace(/&#39;/g, "'")
+          .replace(/&quot;/g, '"')
+          .replace(/\s+/g, " ")
+          .trim();
+
+        if (!rawText) {
+          continue;
+        }
+
+        if (!isPokemonTCGProduct(rawText)) {
+          continue;
+        }
+
+        const absoluteUrl =
+          productUrl.startsWith("http")
+            ? productUrl
+            : `https://www.target.com${productUrl}`;
+
+        const key = absoluteUrl;
+
+        if (!foundProducts.has(key)) {
+          foundProducts.set(key, {
+            name: rawText,
+            url: absoluteUrl
+          });
+        }
+      }
+    }
+
+    console.log(
+      `Target Pokémon TCG candidates found: ${foundProducts.size}`
+    );
+
+    for (const product of foundProducts.values()) {
+      console.log(
+        `Target candidate: ${product.name}`
+      );
+
+      const isNew = rememberProduct(
+        "Target",
+        product
+      );
+
+      if (!isNew) {
+        continue;
+      }
+
+      console.log(
+        `NEW Target Pokémon TCG product: ${product.name}`
+      );
+
+      await sendProductAlert({
+        store: "Target",
+        name: product.name,
+        url: product.url
+      });
+    }
+  } catch (err) {
+    console.error(
+      "Target Scan Error:",
+      err
+    );
+  }
 }
 
 // =====================================
