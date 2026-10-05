@@ -275,16 +275,55 @@ function productIdFromUrl(url) {
   return match ? match[1] : null;
 }
 
+function isProductUrl(url, store) {
+  if (!url) return false;
+
+  const value = String(url).toLowerCase();
+
+  if (store === "Sam's Club") {
+    return value.includes("/ip/");
+  }
+
+  if (store === "Costco") {
+    return value.includes("/p/") || value.includes("compareproductsdisplay?partnumbers=");
+  }
+
+  return value.includes("/p/") || value.includes(".product.");
+}
+
+function isSpecificTCGProductName(name) {
+  const normalized = normalizeText(name);
+
+  // Search/query labels are not products. A real product name must contain
+  // something beyond the generic search terms themselves.
+  const genericNames = new Set([
+    "pokemon tcg",
+    "pokemon trading cards",
+    "pokemon trading card",
+    "pokemon cards",
+    "trading cards",
+    "trading card game"
+  ]);
+
+  return !genericNames.has(normalized);
+}
+
 function addCandidate(found, store, rawName, rawUrl, context = "") {
   const name = cleanText(rawName)
     .replace(/\s+\$\s?[0-9][0-9,]*(?:\.\d{2})?.*$/i, "")
     .trim();
 
-  if (!isPokemonTCGProduct(name)) {
+  if (!isPokemonTCGProduct(name) || !isSpecificTCGProductName(name)) {
     return;
   }
 
   const url = absoluteUrl(cleanText(rawUrl), store);
+
+  // Never treat a search/query/navigation URL as a product. This prevents
+  // retailer page metadata such as "Pokemon TCG" from becoming fake products.
+  if (!isProductUrl(url, store)) {
+    return;
+  }
   const combinedContext = `${name} ${context}`;
   const price = extractPrice(combinedContext);
   const available = inferAvailability(combinedContext);
