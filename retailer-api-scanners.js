@@ -88,12 +88,12 @@ async function fetchJson(url, headers = HEADERS) {
   }
 }
 
-function targetSearchUrl(keyword, purchasable, offset = 0, category = null, page = null) {
+function targetSearchUrl(keyword, purchasable, offset = 0, category = null, pagePath = null) {
   const params = new URLSearchParams({
     key: TARGET_REDSKY_KEY,
     channel: "WEB",
     keyword,
-    page: page || `/s?searchTerm=${keyword.replace(/ /g, "+")}`,
+    page: pagePath || `/s?searchTerm=${keyword.replace(/ /g, "+")}`,
     visitor_id: TARGET_VISITOR_ID,
     pricing_store_id: TARGET_STORE_ID,
     store_ids: TARGET_STORE_ID,
@@ -108,13 +108,13 @@ function targetSearchUrl(keyword, purchasable, offset = 0, category = null, page
   return `https://redsky.target.com/redsky_aggregations/v1/web/plp_search_v2?${params}`;
 }
 
-async function targetSearch(keyword, purchasable, maxPages = 1, category = null, page = null) {
+async function targetSearch(keyword, purchasable, maxPages = 1, category = null, pagePath = null) {
   const products = new Map();
 
   const pageSize = 24;
   for (let page = 0; page < maxPages; page++) {
     const offset = page * pageSize;
-    const url = targetSearchUrl(keyword, purchasable, offset, category, page);
+    const url = targetSearchUrl(keyword, purchasable, offset, category, pagePath);
     const data = await fetchJson(url);
     const rows = data?.data?.search?.products || [];
 
