@@ -252,8 +252,10 @@ async function checkTargetPurchasable({ products, saveProducts, sendProductAlert
 
   const purchasable = new Set();
   try {
-    const results = await targetSearch("pokemon", true, 3);
+    for (const term of TARGET_SEARCH_TERMS) {
+      const results = await targetSearch(term, true, 1);
       for (const tcin of results.keys()) purchasable.add(String(tcin));
+    }
   } catch (err) {
     console.error(`Target purchasable category search error:`, err.message);
   }
@@ -302,27 +304,23 @@ async function discoverTarget({
 }) {
   const discovered = new Map();
 
-  try {
-    const results = await targetSearch("pokemon", false, 3);
-    for (const [tcin, product] of results) {
-      const name = targetProductName(product);
-      if (name) console.log(`Target category candidate | ${tcin} | ${name}`);
-      if (
-        !isPokemonTCGProduct(name) ||
-        !isSpecificTCGProductName(name)
-      ) {
-        continue;
+  for (const term of TARGET_SEARCH_TERMS) {
+    try {
+      const results = await targetSearch(term, false, 1);
+      for (const [tcin, product] of results) {
+        const name = targetProductName(product);
+        if (name) console.log(`Target search candidate | term="${term}" | ${tcin} | ${name}`);
+        if (!isPokemonTCGProduct(name) || !isSpecificTCGProductName(name)) continue;
+        discovered.set(tcin, {
+          id: tcin,
+          name,
+          url: targetProductUrl(product, tcin),
+          price: targetPrice(product),
+        });
       }
-
-      discovered.set(tcin, {
-        id: tcin,
-        name,
-        url: targetProductUrl(product, tcin),
-        price: targetPrice(product),
-      });
+    } catch (err) {
+      console.error(`Target search error | term="${term}":`, err.message);
     }
-  } catch (err) {
-    console.error(`Target category discovery error:`, err.message);
   }
 
   let newCount = 0;
@@ -633,6 +631,12 @@ async function scanCostcoBrowser({
   }
 }
 
+const COSTCO_KNOWN_TCG_ITEMS = [
+  { id: "3540887", name: "Pokémon Collector's Chest + Great Ball + Ultra Ball + 3 Eevee Promo Cards" },
+  { id: "1739847", name: "Pokémon Scarlet & Violet V-Tin & Window Tin" },
+  { id: "2351599", name: "Pokémon 4 Pack V Tins" },
+];
+
 async function scanCostco({
   products,
   saveProducts,
@@ -697,6 +701,18 @@ async function scanCostco({
       for (const item of matches) allMatches.set(String(item.id), item);
     } catch (err) {
       console.error(`Costco GDX error (query="${query}"):`, err.message);
+    }
+  }
+
+  for (const seed of COSTCO_KNOWN_TCG_ITEMS) {
+    if (!allMatches.has(seed.id)) {
+      allMatches.set(seed.id, {
+        id: seed.id,
+        name: seed.name,
+        url: "https://www.costco.com/.product." + seed.id + ".html",
+        price: null,
+        available: null,
+      });
     }
   }
 
