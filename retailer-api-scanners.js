@@ -19,6 +19,8 @@ const HEADERS = {
   "Accept-Language": "en-US,en;q=0.9",
   Origin: "https://www.target.com",
   Referer: "https://www.target.com/",
+  "redsky-client-name": "browse",
+  "redsky-client-version": "1.0.0",
 };
 
 const COSTCO_HEADERS = {
@@ -92,7 +94,6 @@ function targetSearchUrl(keyword, purchasable, offset = 0) {
     default_purchasability_filter: String(purchasable),
     include_sponsored: "false",
     platform: "desktop",
-    include_sponsored: "false",
     count: "96",
     offset: String(offset),
   });
@@ -446,7 +447,7 @@ async function scanCostco({
     const id = String(item.id);
     const name = String(item.name).trim();
     const url = item.url
-      ? (/^https?:\\/\\//i.test(item.url)
+      ? (/^https?:\/\//i.test(item.url)
         ? item.url
         : `https://www.costco.com${item.url.startsWith("/") ? "" : "/"}${item.url}`)
       : `https://www.costco.com/.product.${id}.html`;
