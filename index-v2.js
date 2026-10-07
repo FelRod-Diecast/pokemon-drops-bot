@@ -9,6 +9,7 @@ const CHANNEL_ID = process.env.DROPS_CHANNEL_ID;
 const ZIP_CODE = "76040";
 const SEARCH_RADIUS = 50;
 const PRODUCTS_FILE = path.join(__dirname, "products.json");
+const { startRetailerApiMonitors } = require("./retailer-api-scanners");
 
 function loadProducts() {
   try { return JSON.parse(fs.readFileSync(PRODUCTS_FILE, "utf8")); }
@@ -141,11 +142,14 @@ async function sendProductAlert(product) {
   try {
     if (!CHANNEL_ID) return console.error("Discord Alert Error: DROPS_CHANNEL_ID is not set");
     const channel = await client.channels.fetch(CHANNEL_ID);
-    let message = `🔥 **NEW POKÉMON TCG PRODUCT**\n\n**Store:** ${product.store}\n**Product:** ${product.name}`;
-    if (product.price) message += `\n**Price:** ${product.price}`;
-    if (product.url) message += `\n**Link:** ${product.url}`;
+    const alertType = product.alertType === "RESTOCK" ? "RESTOCK" : "NEW";
+    let message = alertType === "RESTOCK"
+      ? `🚨 **POKÉMON TCG RESTOCK**\\n\\n**Store:** ${product.store}\\n**Product:** ${product.name}`
+      : `🔥 **NEW POKÉMON TCG PRODUCT**\\n\\n**Store:** ${product.store}\\n**Product:** ${product.name}`;
+    if (product.price) message += `\\n**Price:** ${product.price}`;
+    if (product.url) message += `\\n**Link:** ${product.url}`;
     await channel.send(message);
-    console.log(`Discord alert sent: ${product.store} | ${product.name}`);
+    console.log(`Discord alert sent: ${alertType} | ${product.store} | ${product.name}`);
   } catch (err) { console.error("Discord Alert Error:", err); }
 }
 function addCandidate(found, store, rawName, rawUrl, context = "") {
@@ -283,12 +287,10 @@ function testFilter() {
   console.log("================================");
 }
 async function runScan() {
-  console.log("================================\nStarting Pokémon TCG Scan\n================================");
+  console.log("================================\\nStarting Pokémon TCG Scan\\n================================");
   testFilter();
   const sams = await scanSamsClub();
-  const costco = await scanCostco();
-  const target = await scanTarget();
-  console.log(`Scan Complete | Sam's Club: ${sams} | Costco: ${costco} | Target: ${target}`);
+  console.log(`Scan Complete | Sam's Club: ${sams} | Target/Costco API monitors running`);
 }
 client.once("clientReady", async () => {
   console.log("PokemonTrackerV3 Online");
@@ -296,6 +298,13 @@ client.once("clientReady", async () => {
   console.log(`Radius: ${SEARCH_RADIUS} miles`);
   console.log(`Stored products: ${Object.keys(products).length}`);
   await runScan();
+  startRetailerApiMonitors({
+    products,
+    saveProducts,
+    sendProductAlert,
+    isPokemonTCGProduct,
+    isSpecificTCGProductName,
+  });
   setInterval(runScan, 30 * 60 * 1000);
 });
 client.login(process.env.DISCORD_TOKEN);
