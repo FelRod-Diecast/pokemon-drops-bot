@@ -144,10 +144,10 @@ async function sendProductAlert(product) {
     const channel = await client.channels.fetch(CHANNEL_ID);
     const alertType = product.alertType === "RESTOCK" ? "RESTOCK" : "NEW";
     let message = alertType === "RESTOCK"
-      ? `🚨 **POKÉMON TCG RESTOCK**\\n\\n**Store:** ${product.store}\\n**Product:** ${product.name}`
-      : `🔥 **NEW POKÉMON TCG PRODUCT**\\n\\n**Store:** ${product.store}\\n**Product:** ${product.name}`;
-    if (product.price) message += `\\n**Price:** ${product.price}`;
-    if (product.url) message += `\\n**Link:** ${product.url}`;
+      ? `🚨 **POKÉMON TCG RESTOCK**\n\n**Store:** ${product.store}\n**Product:** ${product.name}`
+      : `🔥 **NEW POKÉMON TCG PRODUCT**\n\n**Store:** ${product.store}\n**Product:** ${product.name}`;
+    if (product.price) message += `\n**Price:** ${product.price}`;
+    if (product.url) message += `\n**Link:** ${product.url}`;
     await channel.send(message);
     console.log(`Discord alert sent: ${alertType} | ${product.store} | ${product.name}`);
   } catch (err) { console.error("Discord Alert Error:", err); }
@@ -287,7 +287,7 @@ function testFilter() {
   console.log("================================");
 }
 async function runScan() {
-  console.log("================================\\nStarting Pokémon TCG Scan\\n================================");
+  console.log("================================\nStarting Pokémon TCG Scan\n================================");
   testFilter();
   const sams = await scanSamsClub();
   console.log(`Scan Complete | Sam's Club: ${sams} | Target/Costco API monitors running`);
