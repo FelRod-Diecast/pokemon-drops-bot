@@ -10,7 +10,12 @@ const TARGET_DISCOVERY_INTERVAL_MS = 5 * 60 * 1000;
 const TARGET_STOCK_INTERVAL_MS = 60 * 1000;
 const COSTCO_INTERVAL_MS = 5 * 60 * 1000;
 
-const TARGET_SEARCH_TERMS = ["pokemon", "pokemon tcg", "pokemon trading cards"];
+const TARGET_SEARCH_TERMS = [
+  "pokemon trading cards",
+  "pokemon booster",
+  "pokemon elite trainer",
+  "pokemon collection",
+];
 const TARGET_VISITOR_ID = process.env.TARGET_VISITOR_ID || require("crypto").randomUUID().replace(/-/g, "");
 
 const HEADERS = {
@@ -188,7 +193,7 @@ async function checkTargetPurchasable({ products, saveProducts, sendProductAlert
   }
 
   const purchasable = new Set();
-  for (const term of ["pokemon tcg"]) {
+  for (const term of ["pokemon trading cards", "pokemon booster", "pokemon elite trainer", "pokemon collection"]) {
     try {
       const results = await targetSearch(term, true, 3);
       for (const tcin of results.keys()) purchasable.add(String(tcin));
@@ -433,7 +438,7 @@ async function scanCostco({
   isSpecificTCGProductName,
   sendProductAlert,
 }) {
-  const queries = ["pokemon", "pokemon tcg"];
+  const queries = ["pokemon trading cards", "pokemon booster", "pokemon elite trainer", "pokemon collection"];
   const allMatches = new Map();
 
   for (const query of queries) {
