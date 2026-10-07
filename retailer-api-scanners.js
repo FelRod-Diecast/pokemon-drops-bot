@@ -17,6 +17,7 @@ const TARGET_SEARCH_TERMS = [
   "pokemon collection",
 ];
 const TARGET_VISITOR_ID = process.env.TARGET_VISITOR_ID || require("crypto").randomUUID().replace(/-/g, "");
+const TARGET_TCG_CATEGORY = "6llsh";
 
 const HEADERS = {
   "User-Agent":
@@ -87,12 +88,12 @@ async function fetchJson(url, headers = HEADERS) {
   }
 }
 
-function targetSearchUrl(keyword, purchasable, offset = 0) {
+function targetSearchUrl(keyword, purchasable, offset = 0, category = null, page = null) {
   const params = new URLSearchParams({
     key: TARGET_REDSKY_KEY,
     channel: "WEB",
     keyword,
-    page: `/s?searchTerm=${keyword.replace(/ /g, "+")}`,
+    page: page || `/s?searchTerm=${keyword.replace(/ /g, "+")}`,
     visitor_id: TARGET_VISITOR_ID,
     pricing_store_id: TARGET_STORE_ID,
     store_ids: TARGET_STORE_ID,
@@ -103,21 +104,22 @@ function targetSearchUrl(keyword, purchasable, offset = 0) {
     count: "24",
     offset: String(offset),
   });
+  if (category) params.set("category", category);
   return `https://redsky.target.com/redsky_aggregations/v1/web/plp_search_v2?${params}`;
 }
 
-async function targetSearch(keyword, purchasable, maxPages = 1) {
+async function targetSearch(keyword, purchasable, maxPages = 1, category = null, page = null) {
   const products = new Map();
 
   const pageSize = 24;
   for (let page = 0; page < maxPages; page++) {
     const offset = page * pageSize;
-    const url = targetSearchUrl(keyword, purchasable, offset);
+    const url = targetSearchUrl(keyword, purchasable, offset, category, page);
     const data = await fetchJson(url);
     const rows = data?.data?.search?.products || [];
 
     console.log(
-      `Target RedSky search | term="${keyword}" | purchasable=${purchasable} | offset=${offset} | results=${rows.length}`
+      `Target RedSky search | term="${keyword}" | category=${category || "none"} | purchasable=${purchasable} | offset=${offset} | results=${rows.length}`
     );
 
     for (const product of rows) {
@@ -193,13 +195,11 @@ async function checkTargetPurchasable({ products, saveProducts, sendProductAlert
   }
 
   const purchasable = new Set();
-  for (const term of ["pokemon trading cards", "pokemon booster", "pokemon elite trainer", "pokemon collection"]) {
-    try {
-      const results = await targetSearch(term, true, 3);
+  try {
+    const results = await targetSearch("pokemon", true, 3, TARGET_TCG_CATEGORY, "/c/pokemon-trading-cards-card-games-toys/-/N-6llsh");
       for (const tcin of results.keys()) purchasable.add(String(tcin));
-    } catch (err) {
-      console.error(`Target purchasable search error (term="${term}"):`, err.message);
-    }
+  } catch (err) {
+    console.error(`Target purchasable category search error:`, err.message);
   }
 
   let changed = false;
@@ -246,29 +246,33 @@ async function discoverTarget({
 }) {
   const discovered = new Map();
 
-  for (const term of TARGET_SEARCH_TERMS) {
-    try {
-      const results = await targetSearch(term, false, 3);
-      for (const [tcin, product] of results) {
-        const name = targetProductName(product);
-        if (name) console.log(`Target candidate | ${tcin} | ${name}`);
-        if (
-          !isPokemonTCGProduct(name) ||
-          !isSpecificTCGProductName(name)
-        ) {
-          continue;
-        }
-
-        discovered.set(tcin, {
-          id: tcin,
-          name,
-          url: targetProductUrl(product, tcin),
-          price: targetPrice(product),
-        });
+  try {
+    const results = await targetSearch(
+      "pokemon",
+      false,
+      3,
+      TARGET_TCG_CATEGORY,
+      "/c/pokemon-trading-cards-card-games-toys/-/N-6llsh"
+    );
+    for (const [tcin, product] of results) {
+      const name = targetProductName(product);
+      if (name) console.log(`Target category candidate | ${tcin} | ${name}`);
+      if (
+        !isPokemonTCGProduct(name) ||
+        !isSpecificTCGProductName(name)
+      ) {
+        continue;
       }
-    } catch (err) {
-      console.error(`Target discovery error (${term}):`, err.message);
+
+      discovered.set(tcin, {
+        id: tcin,
+        name,
+        url: targetProductUrl(product, tcin),
+        price: targetPrice(product),
+      });
     }
+  } catch (err) {
+    console.error(`Target category discovery error:`, err.message);
   }
 
   let newCount = 0;
