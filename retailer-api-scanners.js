@@ -11,6 +11,7 @@ const TARGET_STOCK_INTERVAL_MS = 60 * 1000;
 const COSTCO_INTERVAL_MS = 5 * 60 * 1000;
 
 const TARGET_SEARCH_TERMS = ["pokemon", "pokemon tcg", "pokemon trading cards"];
+const TARGET_VISITOR_ID = process.env.TARGET_VISITOR_ID || require("crypto").randomUUID().replace(/-/g, "");
 
 const HEADERS = {
   "User-Agent":
@@ -86,24 +87,24 @@ function targetSearchUrl(keyword, purchasable, offset = 0) {
     key: TARGET_REDSKY_KEY,
     channel: "WEB",
     keyword,
-    page: `/s/${keyword}`,
-    visitor_id: "0000000000000000000000000000000000",
+    page: `/s?searchTerm=${keyword.replace(/ /g, "+")}`,
+    visitor_id: TARGET_VISITOR_ID,
     pricing_store_id: TARGET_STORE_ID,
     store_ids: TARGET_STORE_ID,
     zip: ZIP_CODE,
     default_purchasability_filter: String(purchasable),
     include_sponsored: "false",
     platform: "desktop",
-    count: "96",
+    count: "24",
     offset: String(offset),
   });
-  return `https://redsky.target.com/redsky_aggregations/v1/web/plp_search_v1?${params}`;
+  return `https://redsky.target.com/redsky_aggregations/v1/web/plp_search_v2?${params}`;
 }
 
 async function targetSearch(keyword, purchasable, maxPages = 1) {
   const products = new Map();
 
-  const pageSize = 96;
+  const pageSize = 24;
   for (let page = 0; page < maxPages; page++) {
     const offset = page * pageSize;
     const url = targetSearchUrl(keyword, purchasable, offset);
@@ -474,6 +475,9 @@ async function scanCostco({
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
       const rawItems = extractCostcoProducts(data);
+      console.log(
+        `Costco candidates | query="${query}" | ${rawItems.slice(0, 20).map(item => item.name).join(" || ")}`
+      );
       const matches = rawItems.filter(item =>
         isPokemonTCGProduct(item.name) &&
         isSpecificTCGProductName(item.name)
@@ -623,7 +627,7 @@ function startRetailerApiMonitors(deps) {
   setInterval(runCostco, COSTCO_INTERVAL_MS);
 
   console.log(
-    `Retailer API monitors started | Target discovery=${TARGET_DISCOVERY_INTERVAL_MS / 60000}m | Target stock=${TARGET_STOCK_INTERVAL_MS / 60000}s | Target purchasable=${TARGET_STOCK_INTERVAL_MS / 60000}s | Costco=${COSTCO_INTERVAL_MS / 60000}m`
+    `Retailer API monitors started | Target discovery=${TARGET_DISCOVERY_INTERVAL_MS / 60000}m | Target stock=${TARGET_STOCK_INTERVAL_MS / 1000}s | Target purchasable=${TARGET_STOCK_INTERVAL_MS / 1000}s | Costco=${COSTCO_INTERVAL_MS / 60000}m`
   );
 }
 
