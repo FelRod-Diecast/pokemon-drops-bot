@@ -255,7 +255,7 @@ async function discoverTarget({
       3,
       TARGET_TCG_CATEGORY,
       TARGET_TCG_FACET,
-      "/c/toys-new-arrivals/pokemon/-/N-4slqyZ569t0"
+      TARGET_TCG_PAGE
     );
     for (const [tcin, product] of results) {
       const name = targetProductName(product);
