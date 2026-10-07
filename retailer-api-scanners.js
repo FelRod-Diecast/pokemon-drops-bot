@@ -253,7 +253,7 @@ async function checkTargetPurchasable({ products, saveProducts, sendProductAlert
 
   const purchasable = new Set();
   try {
-    const results = await targetSearch("pokemon", true, 3, TARGET_TCG_CATEGORY, TARGET_TCG_FACET, TARGET_TCG_PAGE);
+    const results = await targetSearch("pokemon", true, 3);
       for (const tcin of results.keys()) purchasable.add(String(tcin));
   } catch (err) {
     console.error(`Target purchasable category search error:`, err.message);
