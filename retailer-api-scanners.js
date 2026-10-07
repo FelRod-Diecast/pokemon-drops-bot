@@ -199,7 +199,6 @@ async function checkCostcoProductDetails(items) {
       itemNumbers: [${itemNumbers.map(id => `"${id}"`).join(", ")}],
       clientId: "4900eb1f-0c10-4bd9-99c3-c59e6c1ecebf",
       locale: "en-us",
-      warehouseNumber: "847"
     ) {
       catalogData {
         itemNumber
