@@ -6,8 +6,8 @@ const TARGET_REDSKY_KEY =
 const TARGET_STORE_ID = process.env.TARGET_STORE_ID || "1368";
 const ZIP_CODE = process.env.ZIP_CODE || "76040";
 
-const TARGET_DISCOVERY_INTERVAL_MS = 15 * 60 * 1000;
-const TARGET_STOCK_INTERVAL_MS = 3 * 60 * 1000;
+const TARGET_DISCOVERY_INTERVAL_MS = 5 * 60 * 1000;
+const TARGET_STOCK_INTERVAL_MS = 60 * 1000;
 const COSTCO_INTERVAL_MS = 5 * 60 * 1000;
 
 const TARGET_SEARCH_TERMS = ["pokemon", "pokemon tcg", "pokemon trading cards"];
@@ -177,6 +177,58 @@ async function targetFulfillment(tcins) {
   return Array.isArray(data?.data?.product_summaries)
     ? data.data.product_summaries
     : [];
+}
+
+async function checkTargetPurchasable({ products, saveProducts, sendProductAlert }) {
+  const tracked = Object.values(products).filter(product => product.store === "Target" && product.id);
+  if (!tracked.length) {
+    console.log("Target purchasable check | tracked=0");
+    return;
+  }
+
+  const purchasable = new Set();
+  for (const term of TARGET_SEARCH_TERMS) {
+    try {
+      const results = await targetSearch(term, true, 3);
+      for (const tcin of results.keys()) purchasable.add(String(tcin));
+    } catch (err) {
+      console.error(`Target purchasable search error (term="${term}"):`, err.message);
+    }
+  }
+
+  let changed = false;
+  let restocks = 0;
+  let sellouts = 0;
+  const now = new Date().toISOString();
+
+  for (const product of tracked) {
+    const available = purchasable.has(String(product.id));
+    const previous = product.available;
+    product.lastPurchasableCheck = now;
+
+    if (previous === false && available) {
+      product.available = true;
+      product.lastRestock = now;
+      restocks++;
+      changed = true;
+      await sendProductAlert({ store: "Target", name: product.name, url: product.url, price: product.price, alertType: "RESTOCK" });
+      console.log(`Target RESTOCK (purchasable): ${product.name}`);
+    } else if (previous === true && !available) {
+      product.available = false;
+      product.lastSellout = now;
+      sellouts++;
+      changed = true;
+      console.log(`Target SELL-OUT (purchasable): ${product.name}`);
+    } else if (previous === null && available) {
+      product.available = true;
+      await sendProductAlert({ store: "Target", name: product.name, url: product.url, price: product.price, alertType: "NEW" });
+      console.log(`Target NEW IN STOCK (purchasable): ${product.name}`);
+      changed = true;
+    }
+  }
+
+  if (changed) saveProducts(products);
+  console.log(`Target purchasable check complete | tracked=${tracked.length} | purchasable=${purchasable.size} | restocks=${restocks} | sellouts=${sellouts}`);
 }
 
 async function discoverTarget({
@@ -562,11 +614,16 @@ function startRetailerApiMonitors(deps) {
   void runCostco();
 
   setInterval(runTargetStock, TARGET_STOCK_INTERVAL_MS);
+  const runTargetPurchasable = async () => {
+    try { await checkTargetPurchasable(deps); } catch (err) { console.error("Target purchasable monitor error:", err.message); }
+  };
+  void runTargetPurchasable();
+  setInterval(runTargetPurchasable, TARGET_STOCK_INTERVAL_MS);
   setInterval(runTargetDiscovery, TARGET_DISCOVERY_INTERVAL_MS);
   setInterval(runCostco, COSTCO_INTERVAL_MS);
 
   console.log(
-    `Retailer API monitors started | Target discovery=${TARGET_DISCOVERY_INTERVAL_MS / 60000}m | Target stock=${TARGET_STOCK_INTERVAL_MS / 60000}m | Costco=${COSTCO_INTERVAL_MS / 60000}m`
+    `Retailer API monitors started | Target discovery=${TARGET_DISCOVERY_INTERVAL_MS / 60000}m | Target stock=${TARGET_STOCK_INTERVAL_MS / 60000}s | Target purchasable=${TARGET_STOCK_INTERVAL_MS / 60000}s | Costco=${COSTCO_INTERVAL_MS / 60000}m`
   );
 }
 
