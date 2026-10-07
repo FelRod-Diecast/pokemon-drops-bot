@@ -268,9 +268,187 @@ async function scanStore(store, urls) {
   }
   return found.size;
 }
+const SAMS_CLUB_ID = process.env.SAMS_CLUB_ID || "";
+const SAMS_VISITOR_ID = process.env.SAMS_VISITOR_ID || require("crypto").randomUUID().replace(/-/g, "");
+
+function collectSamProductObjects(value, found = new Map(), seen = new Set()) {
+  if (!value || typeof value !== "object" || seen.has(value)) return found;
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    for (const item of value) collectSamProductObjects(item, found, seen);
+    return found;
+  }
+
+  const name = cleanText(
+    value.name || value.productName || value.displayName || value.title || value.productTitle || ""
+  );
+  const id = String(
+    value.productId || value.itemId || value.itemNumber || value.sku || value.productNumber || value.id || ""
+  ).trim();
+  const url = value.itemPageUrl || value.productUrl || value.url || value.productURL || value.link || null;
+
+  if (name && (id || url) && /pokemon|tcg|trading card|booster|elite trainer/i.test(name)) {
+    const productUrl = isProductUrl(absoluteUrl(url, "Sam's Club"), "Sam's Club")
+      ? absoluteUrl(url, "Sam's Club")
+      : (id ? `https://www.samsclub.com/ip/-/${id}` : null);
+    if (productUrl) addCandidate(found, "Sam's Club", name, productUrl, JSON.stringify(value));
+  }
+
+  for (const child of Object.values(value)) {
+    if (child && typeof child === "object") collectSamProductObjects(child, found, seen);
+  }
+  return found;
+}
+
+async function samsApiSearch() {
+  const params = new URLSearchParams({
+    sourceType: "1",
+    limit: "45",
+    clubId: SAMS_CLUB_ID,
+    searchCategoryId: "16860219",
+    br: "true",
+    secondaryResults: "2",
+    wmsponsored: "1",
+    wmsba: "true",
+    wmVideo: "true",
+  });
+  const url = `https://www.samsclub.com/api/node/vivaldi/browse/v2/products/search?${params}`;
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/json, text/plain, */*",
+      "Accept-Language": "en-US,en;q=0.9",
+      Referer: "https://www.samsclub.com/browse/pokemon/16860219",
+      visitorId: SAMS_VISITOR_ID,
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/154 Safari/537.36",
+    },
+    redirect: "follow",
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+async function samsApiInventory(productIds) {
+  if (!productIds.length) return new Map();
+
+  const response = await fetch("https://www.samsclub.com/api/node/vivaldi/browse/v2/products", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json, text/plain, */*",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/154 Safari/537.36",
+    },
+    body: JSON.stringify({
+      productIds,
+      type: "LARGE",
+      clubId: SAMS_CLUB_ID,
+    }),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+  const data = await response.json();
+  const result = new Map();
+  const visit = value => {
+    if (!value || typeof value !== "object") return;
+    if (Array.isArray(value)) return value.forEach(visit);
+
+    const id = String(value.productId || value.itemId || value.id || "").trim();
+    const status = String(
+      value?.skus?.onlineoffer?.inventory?.status ||
+      value?.onlineoffer?.inventory?.status ||
+      value?.inventory?.status ||
+      ""
+    ).trim();
+
+    if (id && status) result.set(id, status);
+    Object.values(value).forEach(visit);
+  };
+  visit(data);
+  return result;
+}
+
 async function scanSamsClub() {
-  console.log("Scanning Sam's Club...");
-  return scanStore("Sam's Club", ["https://www.samsclub.com/s/pokemon%20tcg","https://www.samsclub.com/s/pokemon%20cards","https://www.samsclub.com/browse/pokemon/16860219"]);
+  console.log("Scanning Sam's Club via Vivaldi API...");
+  try {
+    const data = await samsApiSearch();
+    const found = collectSamProductObjects(data);
+    console.log(`Sam's Club Vivaldi discovery: candidates=${found.size}`);
+
+    const ids = [...found.values()]
+      .map(product => product.id || productIdFromUrl(product.url))
+      .filter(Boolean)
+      .map(String);
+
+    let inventory = new Map();
+    try {
+      inventory = await samsApiInventory(ids);
+      console.log(`Sam's Club Vivaldi inventory: checked=${ids.length} | statuses=${inventory.size}`);
+    } catch (err) {
+      console.warn(`Sam's Club Vivaldi inventory check failed: ${err.message}`);
+    }
+
+    let newCount = 0;
+    let restocks = 0;
+    for (const product of found.values()) {
+      const id = String(product.id || productIdFromUrl(product.url) || "");
+      const status = inventory.get(id);
+      const available = /IN.?STOCK|AVAILABLE|SELLABLE/i.test(status || "")
+        ? true
+        : /OUT.?OF.?STOCK|UNAVAILABLE|SOLD.?OUT/i.test(status || "")
+          ? false
+          : product.available;
+
+      const key = getProductKey("Sam's Club", product);
+      const existing = products[key];
+
+      if (!existing) {
+        products[key] = {
+          store: "Sam's Club",
+          id: product.id || id || null,
+          name: product.name,
+          url: product.url,
+          price: product.price || null,
+          available,
+          firstSeen: new Date().toISOString(),
+          lastChecked: new Date().toISOString(),
+        };
+        saveProducts(products);
+        newCount++;
+        if (available === true) {
+          await sendProductAlert({ store: "Sam's Club", name: product.name, url: product.url, price: product.price });
+        }
+        continue;
+      }
+
+      const previous = existing.available;
+      existing.name = product.name || existing.name;
+      existing.url = product.url || existing.url;
+      existing.price = product.price || existing.price;
+      existing.lastChecked = new Date().toISOString();
+      if (available !== null) existing.available = available;
+
+      if (previous === false && available === true) {
+        existing.lastRestock = new Date().toISOString();
+        restocks++;
+        await sendProductAlert({
+          store: "Sam's Club",
+          name: existing.name,
+          url: existing.url,
+          price: existing.price,
+          alertType: "RESTOCK",
+        });
+        console.log(`Sam's Club RESTOCK: ${existing.name}`);
+      }
+    }
+
+    saveProducts(products);
+    console.log(`Sam's Club Vivaldi complete | candidates=${found.size} | new=${newCount} | restocks=${restocks}`);
+    return found.size;
+  } catch (err) {
+    console.error(`Sam's Club Vivaldi API failed: ${err.message}`);
+    console.log("Sam's Club falling back to existing page scan...");
+    return scanStore("Sam's Club", ["https://www.samsclub.com/s/pokemon%20tcg","https://www.samsclub.com/s/pokemon%20cards","https://www.samsclub.com/browse/pokemon/16860219"]);
+  }
 }
 async function scanCostco() {
   console.log("Scanning Costco...");
