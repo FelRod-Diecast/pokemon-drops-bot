@@ -17,7 +17,8 @@ const TARGET_SEARCH_TERMS = [
   "pokemon collection",
 ];
 const TARGET_VISITOR_ID = process.env.TARGET_VISITOR_ID || require("crypto").randomUUID().replace(/-/g, "");
-const TARGET_TCG_CATEGORY = "6llsh";
+const TARGET_TCG_CATEGORY = "4slqy";
+const TARGET_TCG_FACET = "569t0";
 
 const HEADERS = {
   "User-Agent":
@@ -88,7 +89,7 @@ async function fetchJson(url, headers = HEADERS) {
   }
 }
 
-function targetSearchUrl(keyword, purchasable, offset = 0, category = null, pagePath = null) {
+function targetSearchUrl(keyword, purchasable, offset = 0, category = null, facet = null, pagePath = null) {
   const params = new URLSearchParams({
     key: TARGET_REDSKY_KEY,
     channel: "WEB",
@@ -105,21 +106,22 @@ function targetSearchUrl(keyword, purchasable, offset = 0, category = null, page
     offset: String(offset),
   });
   if (category) params.set("category", category);
+  if (facet) params.set("faceted_value", facet);
   return `https://redsky.target.com/redsky_aggregations/v1/web/plp_search_v2?${params}`;
 }
 
-async function targetSearch(keyword, purchasable, maxPages = 1, category = null, pagePath = null) {
+async function targetSearch(keyword, purchasable, maxPages = 1, category = null, facet = null, pagePath = null) {
   const products = new Map();
 
   const pageSize = 24;
   for (let page = 0; page < maxPages; page++) {
     const offset = page * pageSize;
-    const url = targetSearchUrl(keyword, purchasable, offset, category, pagePath);
+    const url = targetSearchUrl(keyword, purchasable, offset, category, facet, pagePath);
     const data = await fetchJson(url);
     const rows = data?.data?.search?.products || [];
 
     console.log(
-      `Target RedSky search | term="${keyword}" | category=${category || "none"} | purchasable=${purchasable} | offset=${offset} | results=${rows.length}`
+      `Target RedSky search | term="${keyword}" | category=${category || "none"} | facet=${facet || "none"} | purchasable=${purchasable} | offset=${offset} | results=${rows.length}`
     );
 
     for (const product of rows) {
@@ -196,7 +198,7 @@ async function checkTargetPurchasable({ products, saveProducts, sendProductAlert
 
   const purchasable = new Set();
   try {
-    const results = await targetSearch("pokemon", true, 3, TARGET_TCG_CATEGORY, "/c/pokemon-trading-cards-card-games-toys/-/N-6llsh");
+    const results = await targetSearch("pokemon", true, 3, TARGET_TCG_CATEGORY, TARGET_TCG_FACET, "/c/toys-new-arrivals/pokemon/-/N-4slqyZ569t0");
       for (const tcin of results.keys()) purchasable.add(String(tcin));
   } catch (err) {
     console.error(`Target purchasable category search error:`, err.message);
@@ -252,7 +254,8 @@ async function discoverTarget({
       false,
       3,
       TARGET_TCG_CATEGORY,
-      "/c/pokemon-trading-cards-card-games-toys/-/N-6llsh"
+      TARGET_TCG_FACET,
+      "/c/toys-new-arrivals/pokemon/-/N-4slqyZ569t0"
     );
     for (const [tcin, product] of results) {
       const name = targetProductName(product);
