@@ -10,7 +10,7 @@ const TARGET_DISCOVERY_INTERVAL_MS = 15 * 60 * 1000;
 const TARGET_STOCK_INTERVAL_MS = 3 * 60 * 1000;
 const COSTCO_INTERVAL_MS = 5 * 60 * 1000;
 
-const TARGET_SEARCH_TERMS = ["pokemon tcg", "pokemon trading cards"];
+const TARGET_SEARCH_TERMS = ["pokemon", "pokemon tcg", "pokemon trading cards"];
 
 const HEADERS = {
   "User-Agent":
@@ -92,17 +92,19 @@ function targetSearchUrl(keyword, purchasable, offset = 0) {
     default_purchasability_filter: String(purchasable),
     include_sponsored: "false",
     platform: "desktop",
-    count: "24",
+    include_sponsored: "false",
+    count: "96",
     offset: String(offset),
   });
-  return `https://redsky.target.com/redsky_aggregations/v1/web/plp_search_v2?${params}`;
+  return `https://redsky.target.com/redsky_aggregations/v1/web/plp_search_v1?${params}`;
 }
 
 async function targetSearch(keyword, purchasable, maxPages = 1) {
   const products = new Map();
 
+  const pageSize = 96;
   for (let page = 0; page < maxPages; page++) {
-    const offset = page * 24;
+    const offset = page * pageSize;
     const url = targetSearchUrl(keyword, purchasable, offset);
     const data = await fetchJson(url);
     const rows = data?.data?.search?.products || [];
@@ -116,7 +118,7 @@ async function targetSearch(keyword, purchasable, maxPages = 1) {
       if (tcin) products.set(tcin, product);
     }
 
-    if (rows.length < 24) break;
+    if (rows.length < pageSize) break;
   }
 
   return products;
@@ -190,6 +192,7 @@ async function discoverTarget({
       const results = await targetSearch(term, false, 3);
       for (const [tcin, product] of results) {
         const name = targetProductName(product);
+        if (name) console.log(`Target candidate | ${tcin} | ${name}`);
         if (
           !isPokemonTCGProduct(name) ||
           !isSpecificTCGProductName(name)
@@ -331,68 +334,42 @@ async function checkTargetStock({
 }
 
 function extractCostcoProducts(data) {
-  const found = [];
-  const seen = new Set();
+  const rows = Array.isArray(data?.searchResult?.results)
+    ? data.searchResult.results
+    : [];
+  return rows.map(row => {
+    const product = row?.product || {};
+    const variants = row?.variantRollupValues || {};
+    const availabilityValues = Object.entries(variants)
+      .filter(([key]) => /availability/i.test(key))
+      .flatMap(([, value]) => Array.isArray(value) ? value : [value])
+      .map(value => String(value || "").toUpperCase());
 
-  function visit(value) {
-    if (!value || typeof value !== "object") return;
-    if (Array.isArray(value)) {
-      for (const item of value) visit(item);
-      return;
+    let available = null;
+    if (availabilityValues.some(value =>
+      /IN_STOCK|LOW_STOCK|AVAILABLE|SELLABLE|INVENTORY/.test(value)
+    )) {
+      available = true;
+    } else if (availabilityValues.some(value =>
+      /OUT_OF_STOCK|UNAVAILABLE|SOLD_OUT|NOT_AVAILABLE/.test(value)
+    )) {
+      available = false;
     }
 
-    const id =
-      value.productId ??
-      value.itemNumber ??
-      value.product_id ??
-      value.itemId ??
-      value.partNumber;
+    const priceValues = Object.entries(variants)
+      .filter(([key]) => /(^|,)price$|originalPrice/i.test(key))
+      .flatMap(([, value]) => Array.isArray(value) ? value : [value])
+      .filter(value => value != null && value !== "");
 
-    const name = value.name ?? value.productName ?? value.title ?? value.description;
-
-    if (id != null && name && typeof name === "string") {
-      const key = String(id);
-      if (!seen.has(key)) {
-        seen.add(key);
-        found.push(value);
-      }
-    }
-
-    for (const child of Object.values(value)) {
-      if (child && typeof child === "object") visit(child);
-    }
-  }
-
-  visit(data);
-  return found;
-}
-
-function costcoUrl(item) {
-  const raw = item?.url || item?.productUrl || item?.productURL;
-  if (raw) {
-    if (/^https?:\/\//i.test(raw)) return raw;
-    return `https://www.costco.com${raw.startsWith("/") ? "" : "/"}${raw}`;
-  }
-
-  const id =
-    item?.productId ??
-    item?.itemNumber ??
-    item?.product_id ??
-    item?.itemId ??
-    item?.partNumber;
-
-  return id ? `https://www.costco.com/.product.${id}.html` : null;
-}
-
-function costcoAvailability(item) {
-  if (typeof item?.isInStock === "boolean") return item.isInStock;
-  if (typeof item?.inStock === "boolean") return item.inStock;
-  if (typeof item?.available === "boolean") return item.available;
-
-  const text = JSON.stringify(item).toLowerCase();
-  if (/out[_ -]?of[_ -]?stock|sold[_ -]?out|unavailable/.test(text)) return false;
-  if (/in[_ -]?stock|available/.test(text)) return true;
-  return null;
+    return {
+      id: row?.id || product?.id || product?.itemNumber || null,
+      name: product?.title || product?.name || "",
+      url: product?.uri || product?.url || null,
+      price: priceValues[0] != null ? priceValues[0] : null,
+      available,
+      availabilityValues,
+    };
+  }).filter(item => item.id && item.name);
 }
 
 async function scanCostco({
@@ -402,124 +379,146 @@ async function scanCostco({
   isSpecificTCGProductName,
   sendProductAlert,
 }) {
-  const params = new URLSearchParams({
-    keyword: "pokemon tcg",
-    pageSize: "48",
-    currentPage: "1",
-    responseFormat: "json",
-    storeId: "10301",
-    catalogId: "10701",
-    langId: "-1",
-  });
+  const queries = ["pokemon", "pokemon tcg"];
+  const allMatches = new Map();
 
-  const url = `https://www.costco.com/CatalogSearch?${params}`;
-
-  try {
-    console.log(`Costco API request: ${url}`);
-    const data = await fetchJson(url, COSTCO_HEADERS);
-    const rawItems = extractCostcoProducts(data);
-    const matches = rawItems.filter(item => {
-      const name = String(
-        item.name ?? item.productName ?? item.title ?? item.description ?? ""
-      ).trim();
-      return isPokemonTCGProduct(name) && isSpecificTCGProductName(name);
-    });
-
-    let changed = false;
-    let newProducts = 0;
-    let restocks = 0;
-    let sellouts = 0;
-    const now = new Date().toISOString();
-
-    for (const item of matches) {
-      const id = String(
-        item.productId ??
-          item.itemNumber ??
-          item.product_id ??
-          item.itemId ??
-          item.partNumber
-      );
-      const name = String(
-        item.name ?? item.productName ?? item.title ?? item.description ?? ""
-      ).trim();
-      const url = costcoUrl(item);
-      const price =
-        item.price ||
-        item.formattedPrice ||
-        (item.priceNumeric != null ? `$${item.priceNumeric}` : null);
-      const available = costcoAvailability(item);
-      const key = `Costco:${id}`;
-      const existing = products[key];
-
-      if (!existing) {
-        products[key] = {
-          store: "Costco",
-          id,
-          name,
-          url,
-          price: price || null,
-          available,
-          firstSeen: now,
-          lastChecked: now,
-          lastRestock: available ? now : null,
-          lastSellout: null,
-        };
-        newProducts++;
-        changed = true;
-
-        if (available === true) {
-          await sendProductAlert({
-            store: "Costco",
-            name,
-            url,
-            price,
-            alertType: "NEW",
-          });
-          console.log(`Costco NEW IN STOCK: ${name}`);
+  for (const query of queries) {
+    try {
+      const response = await fetch(
+        "https://gdx-api.costco.com/catalog/search/api/v1/search",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "client_id": "USBC",
+            "client-identifier": "168287ea-1201-45f6-9b45-5bbea49f8ee7",
+            "searchresultprovider": "GRS",
+            "locale": "en-US",
+            "Origin": "https://www.costco.com",
+            "Referer": "https://www.costco.com/",
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/154 Safari/537.36",
+          },
+          body: JSON.stringify({
+            visitorId: "0000000000000000000000000000000000",
+            query,
+            pageSize: 96,
+            offset: 0,
+            orderBy: null,
+            searchMode: "page",
+            personalizationEnabled: false,
+            warehouseId: "129-wh",
+            shipToPostal: ZIP_CODE,
+            shipToState: "TX",
+            deliveryLocations: ["129-wh"],
+            filterBy: [],
+            pageCategories: [],
+          }),
         }
-        continue;
-      }
+      );
 
-      existing.name = name;
-      existing.url = url || existing.url;
-      if (price) existing.price = price;
-      existing.lastChecked = now;
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      const rawItems = extractCostcoProducts(data);
+      const matches = rawItems.filter(item =>
+        isPokemonTCGProduct(item.name) &&
+        isSpecificTCGProductName(item.name)
+      );
 
-      if (existing.available === false && available === true) {
-        existing.available = true;
-        existing.lastRestock = now;
-        restocks++;
-        changed = true;
+      console.log(
+        `Costco GDX search | query="${query}" | raw=${rawItems.length} | TCG=${matches.length}`
+      );
+
+      for (const item of matches) allMatches.set(String(item.id), item);
+    } catch (err) {
+      console.error(`Costco GDX error (query="${query}"):`, err.message);
+    }
+  }
+
+  let changed = false;
+  let newProducts = 0;
+  let restocks = 0;
+  let sellouts = 0;
+  const now = new Date().toISOString();
+
+  for (const item of allMatches.values()) {
+    const id = String(item.id);
+    const name = String(item.name).trim();
+    const url = item.url
+      ? (/^https?:\\/\\//i.test(item.url)
+        ? item.url
+        : `https://www.costco.com${item.url.startsWith("/") ? "" : "/"}${item.url}`)
+      : `https://www.costco.com/.product.${id}.html`;
+    const available = item.available;
+    const key = `Costco:${id}`;
+    const existing = products[key];
+
+    if (!existing) {
+      products[key] = {
+        store: "Costco",
+        id,
+        name,
+        url,
+        price: item.price || null,
+        available,
+        firstSeen: now,
+        lastChecked: now,
+        lastRestock: available === true ? now : null,
+        lastSellout: null,
+      };
+      newProducts++;
+      changed = true;
+
+      if (available === true) {
         await sendProductAlert({
           store: "Costco",
           name,
-          url: existing.url,
-          price: existing.price,
-          alertType: "RESTOCK",
+          url,
+          price: item.price,
+          alertType: "NEW",
         });
-        console.log(`Costco RESTOCK: ${name}`);
-      } else if (existing.available === true && available === false) {
-        existing.available = false;
-        existing.lastSellout = now;
-        sellouts++;
-        changed = true;
-        console.log(`Costco SELL-OUT: ${name}`);
-      } else if (existing.available === null && available !== null) {
-        existing.available = available;
-        changed = true;
+        console.log(`Costco NEW IN STOCK: ${name}`);
       }
+      continue;
     }
 
-    if (changed) saveProducts(products);
+    existing.name = name;
+    existing.url = url || existing.url;
+    if (item.price) existing.price = item.price;
+    existing.lastChecked = now;
 
-    console.log(
-      `Costco API extraction: raw=${rawItems.length}, TCG=${matches.length}, new=${newProducts}, restocks=${restocks}, sellouts=${sellouts}`
-    );
-    return matches.length;
-  } catch (err) {
-    console.error("Costco API error:", err.message);
-    return 0;
+    if (existing.available === false && available === true) {
+      existing.available = true;
+      existing.lastRestock = now;
+      restocks++;
+      changed = true;
+      await sendProductAlert({
+        store: "Costco",
+        name,
+        url: existing.url,
+        price: existing.price,
+        alertType: "RESTOCK",
+      });
+      console.log(`Costco RESTOCK: ${name}`);
+    } else if (existing.available === true && available === false) {
+      existing.available = false;
+      existing.lastSellout = now;
+      sellouts++;
+      changed = true;
+      console.log(`Costco SELL-OUT: ${name}`);
+    } else if (existing.available === null && available !== null) {
+      existing.available = available;
+      changed = true;
+    }
   }
+
+  if (changed) saveProducts(products);
+
+  console.log(
+    `Costco GDX extraction complete | TCG=${allMatches.size} | new=${newProducts} | restocks=${restocks} | sellouts=${sellouts}`
+  );
+  return allMatches.size;
 }
 
 function startRetailerApiMonitors(deps) {
