@@ -93,6 +93,7 @@ async function fetchJson(url, headers = HEADERS) {
 function targetSearchUrl(keyword, purchasable, offset = 0, category = null, facet = null, pagePath = null) {
   const params = new URLSearchParams({
     key: TARGET_REDSKY_KEY,
+    keyword,
     channel: "WEB",
     page: pagePath || `/s?searchTerm=${keyword.replace(/ /g, "+")}`,
     visitor_id: TARGET_VISITOR_ID,
@@ -187,6 +188,60 @@ async function targetFulfillment(tcins) {
   return Array.isArray(data?.data?.product_summaries)
     ? data.data.product_summaries
     : [];
+}
+
+async function checkCostcoProductDetails(items) {
+  if (!items.length) return [];
+
+  const itemNumbers = items.map(item => String(item.id)).filter(Boolean);
+  const query = `query {
+    products(
+      itemNumbers: [${itemNumbers.map(id => `"${id}"`).join(", ")}],
+      clientId: "4900eb1f-0c10-4bd9-99c3-c59e6c1ecebf",
+      locale: "en-us",
+      warehouseNumber: "847"
+    ) {
+      catalogData {
+        itemNumber
+        buyable
+        programTypes
+        priceData { price listPrice }
+        description { shortDescription }
+      }
+    }
+  }`;
+
+  const response = await fetch("https://ecom-api.costco.com/ebusiness/product/v1/products/graphql", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      "client-identifier": "4900eb1f-0c10-4bd9-99c3-c59e6c1ecebf",
+      "costco.env": "ecom",
+      "costco.service": "restProduct",
+      Origin: "https://www.costco.com",
+      Referer: "https://www.costco.com/",
+      "User-Agent": HEADERS["User-Agent"],
+    },
+    body: JSON.stringify({ query }),
+  });
+
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const data = await response.json();
+  const rows = data?.data?.products?.catalogData;
+  if (!Array.isArray(rows)) return [];
+
+  return rows.map(item => ({
+    id: String(item.itemNumber),
+    name: String(item.description?.shortDescription || "").trim(),
+    available: item.buyable === 1,
+    price: item.priceData?.price || null,
+    programTypes: Array.isArray(item.programTypes)
+      ? item.programTypes
+      : typeof item.programTypes === "string"
+        ? item.programTypes.split(",")
+        : [],
+  }));
 }
 
 async function checkTargetPurchasable({ products, saveProducts, sendProductAlert }) {
@@ -593,7 +648,7 @@ async function scanCostco({
   isSpecificTCGProductName,
   sendProductAlert,
 }) {
-  const queries = ["pokemon trading cards", "pokemon booster", "pokemon elite trainer", "pokemon collection"];
+  const queries = ["pokemon", "pokemon trading cards", "pokemon booster", "pokemon elite trainer", "pokemon collection"];
   const allMatches = new Map();
 
   for (const query of queries) {
@@ -650,6 +705,24 @@ async function scanCostco({
       for (const item of matches) allMatches.set(String(item.id), item);
     } catch (err) {
       console.error(`Costco GDX error (query="${query}"):`, err.message);
+    }
+  }
+
+  if (allMatches.size) {
+    try {
+      const details = await checkCostcoProductDetails([...allMatches.values()]);
+      for (const detail of details) {
+        const existing = allMatches.get(detail.id);
+        if (existing) {
+          existing.name = detail.name || existing.name;
+          existing.price = detail.price || existing.price;
+          existing.available = detail.available;
+          existing.programTypes = detail.programTypes;
+        }
+      }
+      console.log(`Costco GraphQL detail check | requested=${allMatches.size} | returned=${details.length} | buyable=${details.filter(item => item.available).length}`);
+    } catch (err) {
+      console.error(`Costco GraphQL detail error:`, err.message);
     }
   }
 
