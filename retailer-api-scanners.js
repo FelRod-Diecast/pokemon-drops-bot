@@ -11,10 +11,8 @@ const TARGET_STOCK_INTERVAL_MS = 60 * 1000;
 const COSTCO_INTERVAL_MS = 5 * 60 * 1000;
 
 const TARGET_SEARCH_TERMS = [
-  "pokemon trading cards",
-  "pokemon booster",
-  "pokemon elite trainer",
-  "pokemon collection",
+  "pokemon booster pack",
+  "pokemon tcg",
 ];
 const TARGET_VISITOR_ID = process.env.TARGET_VISITOR_ID || require("crypto").randomUUID().replace(/-/g, "");
 const TARGET_TCG_CATEGORY = "27p31";
@@ -252,7 +250,8 @@ async function checkTargetPurchasable({ products, saveProducts, sendProductAlert
 
   const purchasable = new Set();
   try {
-    for (const term of TARGET_SEARCH_TERMS) {
+    for (const [index, term] of TARGET_SEARCH_TERMS.entries()) {
+      if (index > 0) await new Promise(resolve => setTimeout(resolve, 2000));
       const results = await targetSearch(term, true, 1);
       for (const tcin of results.keys()) purchasable.add(String(tcin));
     }
@@ -304,8 +303,9 @@ async function discoverTarget({
 }) {
   const discovered = new Map();
 
-  for (const term of TARGET_SEARCH_TERMS) {
+  for (const [index, term] of TARGET_SEARCH_TERMS.entries()) {
     try {
+      if (index > 0) await new Promise(resolve => setTimeout(resolve, 2000));
       const results = await targetSearch(term, false, 1);
       for (const [tcin, product] of results) {
         const name = targetProductName(product);
@@ -320,6 +320,7 @@ async function discoverTarget({
       }
     } catch (err) {
       console.error(`Target search error | term="${term}":`, err.message);
+      if (String(err.message).includes("HTTP 435")) break;
     }
   }
 
