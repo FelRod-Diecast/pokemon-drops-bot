@@ -187,7 +187,7 @@ async function checkTargetPurchasable({ products, saveProducts, sendProductAlert
   }
 
   const purchasable = new Set();
-  for (const term of TARGET_SEARCH_TERMS) {
+  for (const term of ["pokemon tcg"]) {
     try {
       const results = await targetSearch(term, true, 3);
       for (const tcin of results.keys()) purchasable.add(String(tcin));
