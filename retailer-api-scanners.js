@@ -304,14 +304,7 @@ async function discoverTarget({
   const discovered = new Map();
 
   try {
-    const results = await targetSearch(
-      "pokemon",
-      false,
-      3,
-      TARGET_TCG_CATEGORY,
-      TARGET_TCG_FACET,
-      TARGET_TCG_PAGE
-    );
+    const results = await targetSearch("pokemon", false, 3);
     for (const [tcin, product] of results) {
       const name = targetProductName(product);
       if (name) console.log(`Target category candidate | ${tcin} | ${name}`);
