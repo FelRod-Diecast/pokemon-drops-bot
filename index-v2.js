@@ -367,6 +367,50 @@ async function samsApiInventory(productIds) {
   return result;
 }
 
+async function scanSamsClubBrowser() {
+  let puppeteer;
+  try { puppeteer = require("puppeteer"); } catch (err) {
+    console.warn(`Sam's Club browser scanner unavailable: ${err.message}`);
+    return 0;
+  }
+  const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox", "--disable-setuid-sandbox"] });
+  try {
+    const page = await browser.newPage();
+    await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154 Safari/537.36");
+    await page.setExtraHTTPHeaders({ "Accept-Language": "en-US,en;q=0.9" });
+    const urls = ["https://www.samsclub.com/s/pokemon%20tcg", "https://www.samsclub.com/s/pokemon%20cards", "https://www.samsclub.com/browse/pokemon/16860219"];
+    const found = new Map();
+    for (const url of urls) {
+      console.log(`Sam's Club browser request: ${url}`);
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      const html = await page.content();
+      console.log(`Sam's Club browser downloaded ${html.length} characters | title=${await page.title()}`);
+      if (/are-you-human|let us know you're not a robot|robots? only|captcha/i.test(html)) {
+        console.warn("Sam's Club browser received a challenge page; not attempting to bypass it");
+        continue;
+      }
+      extractJsonLd(html, "Sam's Club", found);
+      extractNamedFields(html, "Sam's Club", found);
+      extractAnchors(html, "Sam's Club", found);
+      extractVisibleProductWindows(html, "Sam's Club", found);
+    }
+    let newCount = 0;
+    for (const product of found.values()) {
+      const key = getProductKey("Sam's Club", product);
+      if (!products[key]) {
+        products[key] = { store: "Sam's Club", id: product.id || null, name: product.name, url: product.url || null, price: product.price || null, available: product.available, firstSeen: new Date().toISOString(), lastChecked: new Date().toISOString() };
+        newCount++;
+        if (product.available === true) await sendProductAlert({ store: "Sam's Club", name: product.name, url: product.url, price: product.price });
+      }
+    }
+    if (found.size || newCount) saveProducts(products);
+    console.log(`Sam's Club browser scan complete | candidates=${found.size} | new=${newCount}`);
+    return found.size;
+  } finally {
+    await browser.close();
+  }
+}
 async function scanSamsClub() {
   console.log("Scanning Sam's Club via Vivaldi API...");
   try {
@@ -446,8 +490,11 @@ async function scanSamsClub() {
     return found.size;
   } catch (err) {
     console.error(`Sam's Club Vivaldi API failed: ${err.message}`);
-    console.log("Sam's Club falling back to existing page scan...");
-    return scanStore("Sam's Club", ["https://www.samsclub.com/s/pokemon%20tcg","https://www.samsclub.com/s/pokemon%20cards","https://www.samsclub.com/browse/pokemon/16860219"]);
+    console.log("Sam's Club Vivaldi API failed; trying normal Chromium page scan...");
+    try { return await scanSamsClubBrowser(); } catch (browserErr) {
+      console.error(`Sam's Club browser scan failed: ${browserErr.message}`);
+      return scanStore("Sam's Club", ["https://www.samsclub.com/s/pokemon%20tcg","https://www.samsclub.com/s/pokemon%20cards","https://www.samsclub.com/browse/pokemon/16860219"]);
+    }
   }
 }
 async function scanCostco() {
