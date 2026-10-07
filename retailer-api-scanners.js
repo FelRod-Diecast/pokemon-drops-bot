@@ -17,8 +17,9 @@ const TARGET_SEARCH_TERMS = [
   "pokemon collection",
 ];
 const TARGET_VISITOR_ID = process.env.TARGET_VISITOR_ID || require("crypto").randomUUID().replace(/-/g, "");
-const TARGET_TCG_CATEGORY = "4slqy";
+const TARGET_TCG_CATEGORY = "27p31";
 const TARGET_TCG_FACET = "569t0";
+const TARGET_TCG_PAGE = "/c/trading-cards-toys-games/-/N-27p31";
 
 const HEADERS = {
   "User-Agent":
@@ -93,7 +94,6 @@ function targetSearchUrl(keyword, purchasable, offset = 0, category = null, face
   const params = new URLSearchParams({
     key: TARGET_REDSKY_KEY,
     channel: "WEB",
-    keyword,
     page: pagePath || `/s?searchTerm=${keyword.replace(/ /g, "+")}`,
     visitor_id: TARGET_VISITOR_ID,
     pricing_store_id: TARGET_STORE_ID,
@@ -198,7 +198,7 @@ async function checkTargetPurchasable({ products, saveProducts, sendProductAlert
 
   const purchasable = new Set();
   try {
-    const results = await targetSearch("pokemon", true, 3, TARGET_TCG_CATEGORY, TARGET_TCG_FACET, "/c/toys-new-arrivals/pokemon/-/N-4slqyZ569t0");
+    const results = await targetSearch("pokemon", true, 3, TARGET_TCG_CATEGORY, TARGET_TCG_FACET, TARGET_TCG_PAGE);
       for (const tcin of results.keys()) purchasable.add(String(tcin));
   } catch (err) {
     console.error(`Target purchasable category search error:`, err.message);
@@ -438,6 +438,154 @@ function extractCostcoProducts(data) {
   }).filter(item => item.id && item.name);
 }
 
+async function scanCostcoBrowser({
+  products,
+  saveProducts,
+  isPokemonTCGProduct,
+  isSpecificTCGProductName,
+  sendProductAlert,
+}) {
+  let puppeteer;
+  try {
+    puppeteer = require("puppeteer");
+  } catch (err) {
+    console.warn(`Costco browser scanner unavailable: ${err.message}`);
+    return 0;
+  }
+
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+  });
+
+  try {
+    const page = await browser.newPage();
+    await page.setUserAgent(HEADERS["User-Agent"]);
+    await page.setExtraHTTPHeaders({ "Accept-Language": "en-US,en;q=0.9" });
+
+    const urls = [
+      "https://www.costco.com/s?keyword=pokemon%20tcg",
+      "https://www.costco.com/s?keyword=pokemon%20trading%20cards",
+      "https://www.costco.com/s?keyword=pokemon%20booster",
+    ];
+    const found = new Map();
+
+    for (const url of urls) {
+      console.log(`Costco browser request: ${url}`);
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+      await new Promise(resolve => setTimeout(resolve, 4000));
+
+      const rows = await page.evaluate(() => {
+        const clean = value => String(value || "").replace(/\\s+/g, " ").trim();
+        const rows = [];
+        const seen = new Set();
+
+        for (const script of document.querySelectorAll('script[type="application/ld+json"]')) {
+          try {
+            const data = JSON.parse(script.textContent || "");
+            const visit = value => {
+              if (!value || typeof value !== "object") return;
+              if (Array.isArray(value)) return value.forEach(visit);
+              const name = clean(value.name || value.productName || value.title);
+              const url = clean(value.url || value.productUrl || "");
+              if (name && url && /pokemon|tcg|trading card|booster|elite trainer/i.test(name)) {
+                const key = url || name;
+                if (!seen.has(key)) {
+                  seen.add(key);
+                  rows.push({ name, url, text: name });
+                }
+              }
+              Object.values(value).forEach(visit);
+            };
+            visit(data);
+          } catch {}
+        }
+
+        for (const anchor of document.querySelectorAll("a[href]")) {
+          const text = clean(anchor.textContent);
+          const href = anchor.href || "";
+          const context = clean(anchor.closest("li, article, div")?.innerText || text).slice(0, 1500);
+          if (!text || !href || !/costco\\.com/i.test(href)) continue;
+          if (!/pokemon|tcg|trading card|booster|elite trainer/i.test(text)) continue;
+          if (!/\\.product\\.|product/i.test(href)) continue;
+          const key = href || text;
+          if (!seen.has(key)) {
+            seen.add(key);
+            rows.push({ name: text, url: href, text: context });
+          }
+        }
+        return rows.slice(0, 200);
+      });
+
+      console.log(`Costco browser page | title=${await page.title()} | candidates=${rows.length}`);
+      for (const row of rows) {
+        const name = String(row.name || "").trim();
+        if (!isPokemonTCGProduct(name) || !isSpecificTCGProductName(name)) continue;
+        const url = String(row.url || "").trim();
+        const idMatch = url.match(/(?:\\.product\\.|itemNumber=)([0-9]+)/i);
+        const id = idMatch ? idMatch[1] : url;
+        if (!id || !url) continue;
+        const available = /add to cart|in stock|available for shipping|available online/i.test(String(row.text || ""))
+          ? true
+          : /out of stock|sold out|unavailable|not available/i.test(String(row.text || ""))
+            ? false
+            : null;
+        found.set(String(id), { id: String(id), name, url, price: null, available });
+      }
+    }
+
+    let changed = false;
+    let newProducts = 0;
+    let restocks = 0;
+    const now = new Date().toISOString();
+
+    for (const item of found.values()) {
+      const key = `Costco:${item.id}`;
+      const existing = products[key];
+      if (!existing) {
+        products[key] = {
+          store: "Costco",
+          id: item.id,
+          name: item.name,
+          url: item.url,
+          price: item.price || null,
+          available: item.available,
+          firstSeen: now,
+          lastChecked: now,
+          lastRestock: item.available === true ? now : null,
+          lastSellout: null,
+        };
+        newProducts++;
+        changed = true;
+        if (item.available === true) {
+          await sendProductAlert({ store: "Costco", name: item.name, url: item.url, price: item.price, alertType: "NEW" });
+        }
+        continue;
+      }
+
+      const previous = existing.available;
+      existing.name = item.name;
+      existing.url = item.url || existing.url;
+      existing.lastChecked = now;
+      if (item.available !== null) existing.available = item.available;
+
+      if (previous === false && item.available === true) {
+        existing.lastRestock = now;
+        restocks++;
+        changed = true;
+        await sendProductAlert({ store: "Costco", name: existing.name, url: existing.url, price: existing.price, alertType: "RESTOCK" });
+        console.log(`Costco RESTOCK (browser): ${existing.name}`);
+      }
+    }
+
+    if (changed) saveProducts(products);
+    console.log(`Costco browser discovery complete | TCG=${found.size} | new=${newProducts} | restocks=${restocks}`);
+    return found.size;
+  } finally {
+    await browser.close();
+  }
+}
+
 async function scanCostco({
   products,
   saveProducts,
@@ -587,6 +735,22 @@ async function scanCostco({
   console.log(
     `Costco GDX extraction complete | TCG=${allMatches.size} | new=${newProducts} | restocks=${restocks} | sellouts=${sellouts}`
   );
+
+  if (allMatches.size === 0) {
+    console.log("Costco GDX returned no verified Pokémon TCG products; trying normal Chromium discovery...");
+    try {
+      return await scanCostcoBrowser({
+        products,
+        saveProducts,
+        isPokemonTCGProduct,
+        isSpecificTCGProductName,
+        sendProductAlert,
+      });
+    } catch (browserErr) {
+      console.error(`Costco browser scan failed: ${browserErr.message}`);
+    }
+  }
+
   return allMatches.size;
 }
 
