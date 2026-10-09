@@ -233,7 +233,8 @@ async function checkCostcoProductDetails(items) {
   return rows.map(item => ({
     id: String(item.itemNumber),
     name: String(item.description?.shortDescription || "").trim(),
-    available: item.buyable === 1,
+    available: null, // catalog buyability is not proof of local inventory
+    catalogBuyable: item.buyable === 1,
     price: item.priceData?.price || null,
     programTypes: Array.isArray(item.programTypes)
       ? item.programTypes
@@ -739,11 +740,14 @@ async function scanCostco({
         if (existing) {
           existing.name = detail.name || existing.name;
           existing.price = detail.price || existing.price;
-          existing.available = detail.available;
+          // Costco's catalog "buyable" flag is not local, real-time inventory.
+          // Preserve any explicit availability signal found in the search response.
+          if (detail.available !== null) existing.available = detail.available;
+          existing.catalogBuyable = detail.catalogBuyable;
           existing.programTypes = detail.programTypes;
         }
       }
-      console.log(`Costco GraphQL detail check | requested=${allMatches.size} | returned=${details.length} | buyable=${details.filter(item => item.available).length}`);
+      console.log(`Costco GraphQL detail check | requested=${allMatches.size} | returned=${details.length} | catalogBuyable=${details.filter(item => item.catalogBuyable).length} | localStockVerified=${details.filter(item => item.available !== null).length}`);
     } catch (err) {
       console.error(`Costco GraphQL detail error:`, err.message);
     }
@@ -788,9 +792,9 @@ async function scanCostco({
         name,
         url,
         price: item.price,
-        alertType: "NEW",
+        alertType: available === true ? "NEW" : "LISTING",
       });
-      console.log(`Costco NEW LISTING: ${name} | availability=${available === true ? "in stock" : available === false ? "out of stock" : "unknown"}`);
+      console.log(`Costco NEW LISTING: ${name} | availability=${available === true ? "verified in stock" : available === false ? "verified out of stock" : "unknown (catalog buyability is not stock verification)"}`);
       continue;
     }
 
