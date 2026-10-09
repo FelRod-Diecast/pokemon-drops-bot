@@ -74,11 +74,14 @@ async function fetchJson(url, headers = HEADERS) {
     headers,
   });
 
+  const text = await response.text();
   if (!response.ok && response.status !== 206) {
-    throw new Error(`HTTP ${response.status}`);
+    // Include a short response excerpt so retailer-specific failures (e.g. Target HTTP 435)
+    // can be diagnosed without logging the request URL, which contains the API key.
+    const excerpt = text.slice(0, 180).replace(/\s+/g, " ").trim();
+    throw new Error(`HTTP ${response.status}${excerpt ? ` | response=${excerpt}` : ""}`);
   }
 
-  const text = await response.text();
   try {
     return JSON.parse(text);
   } catch {
@@ -492,6 +495,7 @@ function extractCostcoProducts(data) {
       price: priceValues[0] != null ? priceValues[0] : null,
       available,
       availabilityValues,
+      source: "gdx",
     };
   }).filter(item => item.id && item.name);
 }
@@ -588,7 +592,7 @@ async function scanCostcoBrowser({
           : /out of stock|sold out|unavailable|not available/i.test(String(row.text || ""))
             ? false
             : null;
-        found.set(String(id), { id: String(id), name, url, price: null, available });
+        found.set(String(id), { id: String(id), name, url, price: null, available, source: "browser" });
       }
     }
 
@@ -748,6 +752,7 @@ async function scanCostco({
         url: "https://www.costco.com/.product." + seed.id + ".html",
         price: null,
         available: null,
+        source: "catalog-seed",
       });
     }
   }
@@ -791,6 +796,7 @@ async function scanCostco({
     const key = `Costco:${id}`;
     const existing = products[key];
 
+    const source = item.source || "gdx";
     if (!existing) {
       products[key] = {
         store: "Costco",
@@ -799,6 +805,7 @@ async function scanCostco({
         url,
         price: item.price || null,
         available,
+        source,
         firstSeen: now,
         lastChecked: now,
         lastRestock: available === true ? now : null,
@@ -807,23 +814,45 @@ async function scanCostco({
       newProducts++;
       changed = true;
 
-      await sendProductAlert({
-        store: "Costco",
-        name,
-        url,
-        price: item.price,
-        alertType: available === true ? "NEW" : "LISTING",
-      });
-      console.log(`Costco NEW LISTING: ${name} | availability=${available === true ? "verified in stock" : available === false ? "verified out of stock" : "unknown (catalog buyability is not stock verification)"}`);
+      if (source !== "catalog-seed") {
+        await sendProductAlert({
+          store: "Costco",
+          name,
+          url,
+          price: item.price,
+          alertType: available === true ? "NEW" : "LISTING",
+        });
+        console.log(`Costco NEW LISTING: ${name} | source=${source} | availability=${available === true ? "verified in stock" : available === false ? "verified out of stock" : "unknown (catalog buyability is not stock verification)"}`);
+      } else {
+        console.log(`Costco catalog seed stored silently | ${name} | awaiting live retailer match`);
+      }
       continue;
     }
 
+    const wasCatalogSeed = existing.source === "catalog-seed";
     existing.name = name;
     existing.url = url || existing.url;
     if (item.price) existing.price = item.price;
     existing.lastChecked = now;
+    if (source !== "catalog-seed") existing.source = source;
 
-    if (existing.available === false && available === true) {
+    if (wasCatalogSeed && source !== "catalog-seed") {
+      // A seed is only a watch target, not proof of a live listing. Alert only
+      // after a real GDX/browser result confirms the product is present.
+      if (available === true) {
+        existing.available = true;
+        existing.lastRestock = now;
+        await sendProductAlert({ store: "Costco", name, url: existing.url, price: existing.price, alertType: "NEW" });
+        console.log(`Costco live listing promoted from catalog seed | in stock: ${name}`);
+      } else if (available === null) {
+        await sendProductAlert({ store: "Costco", name, url: existing.url, price: existing.price, alertType: "LISTING" });
+        console.log(`Costco live listing promoted from catalog seed | stock unknown: ${name}`);
+      } else {
+        existing.available = false;
+        console.log(`Costco live listing promoted from catalog seed | out of stock: ${name}`);
+      }
+      changed = true;
+    } else if (existing.available === false && available === true) {
       existing.available = true;
       existing.lastRestock = now;
       restocks++;
