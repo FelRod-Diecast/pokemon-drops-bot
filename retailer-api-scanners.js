@@ -97,6 +97,7 @@ function targetSearchUrl(keyword, purchasable, offset = 0, category = null, face
     visitor_id: TARGET_VISITOR_ID,
     pricing_store_id: TARGET_STORE_ID,
     store_ids: TARGET_STORE_ID,
+    scheduled_delivery_store_id: TARGET_STORE_ID,
     zip: ZIP_CODE,
     default_purchasability_filter: String(purchasable),
     include_sponsored: "false",
@@ -174,6 +175,7 @@ async function targetFulfillment(tcins) {
     tcins: tcins.join(","),
     store_id: TARGET_STORE_ID,
     pricing_store_id: TARGET_STORE_ID,
+    scheduled_delivery_store_id: TARGET_STORE_ID,
     zip: ZIP_CODE,
     channel: "WEB",
   });
