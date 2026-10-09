@@ -6,8 +6,8 @@ const TARGET_REDSKY_KEY =
 const TARGET_STORE_ID = process.env.TARGET_STORE_ID || "1368";
 const ZIP_CODE = process.env.ZIP_CODE || "76040";
 
-const TARGET_DISCOVERY_INTERVAL_MS = 5 * 60 * 1000;
-const TARGET_STOCK_INTERVAL_MS = 60 * 1000;
+const TARGET_DISCOVERY_INTERVAL_MS = 10 * 60 * 1000;
+const TARGET_STOCK_INTERVAL_MS = 3 * 60 * 1000;
 const COSTCO_INTERVAL_MS = 5 * 60 * 1000;
 
 const TARGET_SEARCH_TERMS = [
@@ -251,12 +251,13 @@ async function checkTargetPurchasable({ products, saveProducts, sendProductAlert
   const purchasable = new Set();
   try {
     for (const [index, term] of TARGET_SEARCH_TERMS.entries()) {
-      if (index > 0) await new Promise(resolve => setTimeout(resolve, 2000));
+      if (index > 0) await new Promise(resolve => setTimeout(resolve, 5000));
       const results = await targetSearch(term, true, 1);
       for (const tcin of results.keys()) purchasable.add(String(tcin));
     }
   } catch (err) {
-    console.error(`Target purchasable category search error:`, err.message);
+    console.error(`Target purchasable search failed; preserving previous stock state: ${err.message}`);
+    return;
   }
 
   let changed = false;
@@ -305,7 +306,7 @@ async function discoverTarget({
 
   for (const [index, term] of TARGET_SEARCH_TERMS.entries()) {
     try {
-      if (index > 0) await new Promise(resolve => setTimeout(resolve, 2000));
+      if (index > 0) await new Promise(resolve => setTimeout(resolve, 5000));
       const results = await targetSearch(term, false, 1);
       for (const [tcin, product] of results) {
         const name = targetProductName(product);
@@ -343,6 +344,14 @@ async function discoverTarget({
         lastSellout: null,
       };
       newCount++;
+      await sendProductAlert({
+        store: "Target",
+        name: item.name,
+        url: item.url,
+        price: item.price,
+        alertType: "NEW",
+      });
+      console.log(`Target NEW LISTING: ${item.name}`);
     } else {
       existing.name = item.name;
       existing.url = item.url || existing.url;
@@ -769,16 +778,14 @@ async function scanCostco({
       newProducts++;
       changed = true;
 
-      if (available === true) {
-        await sendProductAlert({
-          store: "Costco",
-          name,
-          url,
-          price: item.price,
-          alertType: "NEW",
-        });
-        console.log(`Costco NEW IN STOCK: ${name}`);
-      }
+      await sendProductAlert({
+        store: "Costco",
+        name,
+        url,
+        price: item.price,
+        alertType: "NEW",
+      });
+      console.log(`Costco NEW LISTING: ${name} | availability=${available === true ? "in stock" : available === false ? "out of stock" : "unknown"}`);
       continue;
     }
 
@@ -875,17 +882,15 @@ function startRetailerApiMonitors(deps) {
   void runTargetDiscovery();
   void runCostco();
 
+  // Fulfillment is the single stock authority. The duplicate keyword-based
+  // purchasability loop generated unnecessary requests and could misread a
+  // blocked search as a stock-out.
   setInterval(runTargetStock, TARGET_STOCK_INTERVAL_MS);
-  const runTargetPurchasable = async () => {
-    try { await checkTargetPurchasable(deps); } catch (err) { console.error("Target purchasable monitor error:", err.message); }
-  };
-  void runTargetPurchasable();
-  setInterval(runTargetPurchasable, TARGET_STOCK_INTERVAL_MS);
   setInterval(runTargetDiscovery, TARGET_DISCOVERY_INTERVAL_MS);
   setInterval(runCostco, COSTCO_INTERVAL_MS);
 
   console.log(
-    `Retailer API monitors started | Target discovery=${TARGET_DISCOVERY_INTERVAL_MS / 60000}m | Target stock=${TARGET_STOCK_INTERVAL_MS / 1000}s | Target purchasable=${TARGET_STOCK_INTERVAL_MS / 1000}s | Costco=${COSTCO_INTERVAL_MS / 60000}m`
+    `Retailer API monitors started | Target discovery=${TARGET_DISCOVERY_INTERVAL_MS / 60000}m | Target fulfillment stock=${TARGET_STOCK_INTERVAL_MS / 1000}s | Costco=${COSTCO_INTERVAL_MS / 60000}m`
   );
 }
 
