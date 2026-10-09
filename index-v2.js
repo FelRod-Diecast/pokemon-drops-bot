@@ -458,9 +458,14 @@ async function scanSamsClub() {
         };
         saveProducts(products);
         newCount++;
-        if (available === true) {
-          await sendProductAlert({ store: "Sam's Club", name: product.name, url: product.url, price: product.price });
-        }
+        await sendProductAlert({
+          store: "Sam's Club",
+          name: product.name,
+          url: product.url,
+          price: product.price,
+          alertType: "NEW",
+        });
+        console.log(`Sam's Club NEW LISTING: ${product.name} | availability=${available === true ? "in stock" : available === false ? "out of stock" : "unknown"}`);
         continue;
       }
 
