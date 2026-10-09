@@ -573,17 +573,21 @@ async function scanCostcoBrowser({
           const card = anchor.closest(
             'li, article, [data-testid*="product"], [class*="product-tile"], [class*="product-card"], [class*="productCard"]'
           ) || anchor.parentElement;
-          const titleNode = card?.querySelector(
-            'h2, h3, [data-testid*="title"], [class*="product-title"], [class*="productTitle"], [class*="description"]'
-          );
-          const imageAlt = clean(anchor.querySelector("img")?.alt || card?.querySelector("img")?.alt);
-          const name = clean(
-            anchor.getAttribute("aria-label") ||
-            anchor.getAttribute("title") ||
-            titleNode?.textContent ||
-            imageAlt ||
-            anchorText
-          );
+          const titleSelector =
+            'h1, h2, h3, [data-testid*="title"], [class*="product-title"], [class*="productTitle"], [class*="description"]';
+          const titleCandidates = [
+            anchor.getAttribute("aria-label"),
+            anchor.getAttribute("title"),
+            ...Array.from(card?.querySelectorAll(titleSelector) || []).map(node => node.textContent),
+            anchor.querySelector("img")?.alt,
+            card?.querySelector("img")?.alt,
+            anchorText,
+          ].map(clean).filter(Boolean);
+          // Prefer a real Pokémon/TCG title over generic headings such as "View Details".
+          const name =
+            titleCandidates.find(value => /pokemon|tcg|trading card|booster|elite trainer/i.test(value)) ||
+            titleCandidates[0] ||
+            "";
           const context = clean(card?.innerText || anchorText).slice(0, 1500);
 
           if (!/pokemon|tcg|trading card|booster|elite trainer/i.test(
@@ -602,6 +606,9 @@ async function scanCostcoBrowser({
       });
 
       console.log(`Costco browser page | title=${await page.title()} | candidates=${rows.length}`);
+      for (const row of rows.slice(0, 10)) {
+        console.log(`Costco browser candidate detail | name=${String(row.name || "").slice(0, 140)} | url=${String(row.url || "").slice(0, 220)}`);
+      }
       for (const row of rows) {
         const name = String(row.name || "").trim();
         if (!isPokemonTCGProduct(name) || !isSpecificTCGProductName(name)) continue;
