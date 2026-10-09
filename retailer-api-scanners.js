@@ -534,7 +534,7 @@ async function scanCostcoBrowser({
       await new Promise(resolve => setTimeout(resolve, 4000));
 
       const rows = await page.evaluate(() => {
-        const clean = value => String(value || "").replace(/\\s+/g, " ").trim();
+        const clean = value => String(value || "").replace(/\s+/g, " ").trim();
         const rows = [];
         const seen = new Set();
 
