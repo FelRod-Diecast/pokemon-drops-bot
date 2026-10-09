@@ -645,6 +645,9 @@ const COSTCO_KNOWN_TCG_ITEMS = [
   { id: "3540887", name: "Pokémon Collector's Chest + Great Ball + Ultra Ball + 3 Eevee Promo Cards" },
   { id: "1739847", name: "Pokémon Scarlet & Violet V-Tin & Window Tin" },
   { id: "2351599", name: "Pokémon 4 Pack V Tins" },
+  { id: "1901714", name: "Pokémon 3-pack Paldea Partners Tins" },
+  { id: "1828995", name: "Pokémon Elite Trainer Box: Crown Zenith + Koraidon ex Tin + Miraidon Window Tin" },
+  { id: "1861371", name: "Pokémon TCG: Charizard ex Super-Premium Collection" },
 ];
 
 async function scanCostco({
