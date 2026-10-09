@@ -83,7 +83,7 @@ async function fetchJson(url, headers = HEADERS) {
     return JSON.parse(text);
   } catch {
     throw new Error(
-      `Expected JSON, received non-JSON response (${text.slice(0, 80).replace(/\\s+/g, " ")})`
+      `Expected JSON, received non-JSON response (${text.slice(0, 80).replace(/\s+/g, " ")})`
     );
   }
 }
@@ -563,9 +563,9 @@ async function scanCostcoBrowser({
           const text = clean(anchor.textContent);
           const href = anchor.href || "";
           const context = clean(anchor.closest("li, article, div")?.innerText || text).slice(0, 1500);
-          if (!text || !href || !/costco\\.com/i.test(href)) continue;
+          if (!text || !href || !/costco\.com/i.test(href)) continue;
           if (!/pokemon|tcg|trading card|booster|elite trainer/i.test(text)) continue;
-          if (!/\\.product\\.|product/i.test(href)) continue;
+          if (!/\.product\.|product/i.test(href)) continue;
           const key = href || text;
           if (!seen.has(key)) {
             seen.add(key);
@@ -580,7 +580,7 @@ async function scanCostcoBrowser({
         const name = String(row.name || "").trim();
         if (!isPokemonTCGProduct(name) || !isSpecificTCGProductName(name)) continue;
         const url = String(row.url || "").trim();
-        const idMatch = url.match(/(?:\\.product\\.|itemNumber=)([0-9]+)/i);
+        const idMatch = url.match(/(?:\.product\.|itemNumber=)([0-9]+)/i);
         const id = idMatch ? idMatch[1] : url;
         if (!id || !url) continue;
         const available = /add to cart|in stock|available for shipping|available online/i.test(String(row.text || ""))
