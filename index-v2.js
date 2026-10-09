@@ -16,14 +16,23 @@ const PRODUCTS_FILE = process.env.PRODUCTS_FILE
 const { startRetailerApiMonitors } = require("./retailer-api-scanners");
 
 function loadProducts() {
-  try { return JSON.parse(fs.readFileSync(PRODUCTS_FILE, "utf8")); }
-  catch { return {}; }
+  try {
+    const loaded = JSON.parse(fs.readFileSync(PRODUCTS_FILE, "utf8"));
+    if (!loaded || typeof loaded !== "object" || Array.isArray(loaded)) {
+      throw new Error("state file does not contain a product object");
+    }
+    return loaded;
+  } catch (err) {
+    console.warn(`Product state unavailable at ${PRODUCTS_FILE}: ${err.message}; starting with empty state`);
+    return {};
+  }
 }
 function saveProducts(data) {
   fs.mkdirSync(path.dirname(PRODUCTS_FILE), { recursive: true });
   fs.writeFileSync(PRODUCTS_FILE, JSON.stringify(data, null, 2));
 }
 const products = loadProducts();
+console.log(`Product state file: ${PRODUCTS_FILE} | stored products: ${Object.keys(products).length}`);
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
@@ -147,10 +156,16 @@ async function sendProductAlert(product) {
   try {
     if (!CHANNEL_ID) return console.error("Discord Alert Error: DROPS_CHANNEL_ID is not set");
     const channel = await client.channels.fetch(CHANNEL_ID);
-    const alertType = product.alertType === "RESTOCK" ? "RESTOCK" : "NEW";
+    const alertType = product.alertType === "RESTOCK"
+      ? "RESTOCK"
+      : product.alertType === "LISTING"
+        ? "LISTING"
+        : "NEW";
     let message = alertType === "RESTOCK"
       ? `🚨 **POKÉMON TCG RESTOCK**\n\n**Store:** ${product.store}\n**Product:** ${product.name}`
-      : `🔥 **NEW POKÉMON TCG PRODUCT**\n\n**Store:** ${product.store}\n**Product:** ${product.name}`;
+      : alertType === "LISTING"
+        ? `🔎 **NEW POKÉMON TCG LISTING — STOCK NOT VERIFIED**\n\n**Store:** ${product.store}\n**Product:** ${product.name}`
+        : `🔥 **NEW POKÉMON TCG PRODUCT — AVAILABILITY VERIFIED**\n\n**Store:** ${product.store}\n**Product:** ${product.name}`;
     if (product.price) message += `\n**Price:** ${product.price}`;
     if (product.url) message += `\n**Link:** ${product.url}`;
     await channel.send(message);
