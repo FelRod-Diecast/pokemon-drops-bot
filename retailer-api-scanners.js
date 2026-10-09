@@ -564,16 +564,38 @@ async function scanCostcoBrowser({
         }
 
         for (const anchor of document.querySelectorAll("a[href]")) {
-          const text = clean(anchor.textContent);
+          const anchorText = clean(anchor.textContent);
           const href = anchor.href || "";
-          const context = clean(anchor.closest("li, article, div")?.innerText || text).slice(0, 1500);
-          if (!text || !href || !/costco\.com/i.test(href)) continue;
-          if (!/pokemon|tcg|trading card|booster|elite trainer/i.test(text)) continue;
-          if (!/\.product\.|product/i.test(href)) continue;
-          const key = href || text;
+          if (!href || !/^https?:\/\/www\.costco\.com\//i.test(href)) continue;
+
+          // Search cards often put the product name in a nested heading or image alt,
+          // while the clickable anchor itself contains only "View Details" or is empty.
+          const card = anchor.closest(
+            'li, article, [data-testid*="product"], [class*="product-tile"], [class*="product-card"], [class*="productCard"]'
+          ) || anchor.parentElement;
+          const titleNode = card?.querySelector(
+            'h2, h3, [data-testid*="title"], [class*="product-title"], [class*="productTitle"], [class*="description"]'
+          );
+          const imageAlt = clean(anchor.querySelector("img")?.alt || card?.querySelector("img")?.alt);
+          const name = clean(
+            anchor.getAttribute("aria-label") ||
+            anchor.getAttribute("title") ||
+            titleNode?.textContent ||
+            imageAlt ||
+            anchorText
+          );
+          const context = clean(card?.innerText || anchorText).slice(0, 1500);
+
+          if (!/pokemon|tcg|trading card|booster|elite trainer/i.test(
+            name + " " + context.slice(0, 500)
+          )) continue;
+          // Exclude search/category links, but accept Costco's different product URL formats.
+          if (!/(\.product\.|\/p\/|\/product\/|itemNumber=|\.html(?:[?#]|$))/i.test(href)) continue;
+
+          const key = href || name;
           if (!seen.has(key)) {
             seen.add(key);
-            rows.push({ name: text, url: href, text: context });
+            rows.push({ name, url: href, text: context });
           }
         }
         return rows.slice(0, 200);
