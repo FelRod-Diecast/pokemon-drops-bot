@@ -738,6 +738,8 @@ async function scanCostco({
       console.error(`Costco browser scan failed: ${browserErr.message}`);
     }
   }
+  const liveGdxCount = allMatches.size;
+
   for (const seed of COSTCO_KNOWN_TCG_ITEMS) {
     if (!allMatches.has(seed.id)) {
       allMatches.set(seed.id, {
@@ -849,7 +851,7 @@ async function scanCostco({
   if (changed) saveProducts(products);
 
   console.log(
-    `Costco GDX extraction complete | TCG=${allMatches.size} | new=${newProducts} | restocks=${restocks} | sellouts=${sellouts}`
+    `Costco GDX extraction complete | liveGdxTCG=${liveGdxCount} | catalogEntries=${allMatches.size} | new=${newProducts} | restocks=${restocks} | sellouts=${sellouts}`
   );
 
   return allMatches.size;
