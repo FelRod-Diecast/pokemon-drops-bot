@@ -720,6 +720,24 @@ async function scanCostco({
     }
   }
 
+  if (allMatches.size === 0) {
+    console.log("Costco GDX returned no live Pokémon TCG matches; trying normal Chromium discovery...");
+    try {
+      const browserCount = await scanCostcoBrowser({
+        products,
+        saveProducts,
+        isPokemonTCGProduct,
+        isSpecificTCGProductName,
+        sendProductAlert,
+      });
+      if (browserCount > 0) {
+        console.log(`Costco browser fallback found live candidates | TCG=${browserCount}; skipping seed-only catalog pass`);
+        return browserCount;
+      }
+    } catch (browserErr) {
+      console.error(`Costco browser scan failed: ${browserErr.message}`);
+    }
+  }
   for (const seed of COSTCO_KNOWN_TCG_ITEMS) {
     if (!allMatches.has(seed.id)) {
       allMatches.set(seed.id, {
@@ -833,21 +851,6 @@ async function scanCostco({
   console.log(
     `Costco GDX extraction complete | TCG=${allMatches.size} | new=${newProducts} | restocks=${restocks} | sellouts=${sellouts}`
   );
-
-  if (allMatches.size === 0) {
-    console.log("Costco GDX returned no verified Pokémon TCG products; trying normal Chromium discovery...");
-    try {
-      return await scanCostcoBrowser({
-        products,
-        saveProducts,
-        isPokemonTCGProduct,
-        isSpecificTCGProductName,
-        sendProductAlert,
-      });
-    } catch (browserErr) {
-      console.error(`Costco browser scan failed: ${browserErr.message}`);
-    }
-  }
 
   return allMatches.size;
 }
