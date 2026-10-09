@@ -8,7 +8,11 @@ const fetch = (...args) =>
 const CHANNEL_ID = process.env.DROPS_CHANNEL_ID;
 const ZIP_CODE = "76040";
 const SEARCH_RADIUS = 50;
-const PRODUCTS_FILE = path.join(__dirname, "products.json");
+// Railway's container filesystem is ephemeral unless a Volume is mounted.
+ // Set PRODUCTS_FILE=/data/products.json when a Railway Volume is mounted at /data.
+const PRODUCTS_FILE = process.env.PRODUCTS_FILE
+  ? path.resolve(process.env.PRODUCTS_FILE)
+  : path.join(__dirname, "products.json");
 const { startRetailerApiMonitors } = require("./retailer-api-scanners");
 
 function loadProducts() {
@@ -16,6 +20,7 @@ function loadProducts() {
   catch { return {}; }
 }
 function saveProducts(data) {
+  fs.mkdirSync(path.dirname(PRODUCTS_FILE), { recursive: true });
   fs.writeFileSync(PRODUCTS_FILE, JSON.stringify(data, null, 2));
 }
 const products = loadProducts();
